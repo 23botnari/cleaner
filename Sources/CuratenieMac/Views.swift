@@ -35,12 +35,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         completionHandler([.banner, .sound])
     }
 
+    /// Ieșire reală doar din meniul din bară sau la logout / oprire.
+    static var quitting = false
+
     /// Rămâne în bara de meniu după închiderea ferestrei; se închide din meniu → Ieșire.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    /// Quit din Dock / ⌘Q: închide ferestrele și ascunde iconița din Dock, iconița din bară rămâne.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if Self.quitting { return .terminateNow }
+        for w in sender.windows where w.canBecomeMain { w.close() }
+        Self.hideFromDock()
+        return .terminateCancel
+    }
+
+    /// Redeschis din Finder / Launchpad: revine în Dock; SwiftUI recreează fereastra.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        Self.showInDock()
+        return true
+    }
+
+    static func showInDock() {
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    static func hideFromDock() {
+        NSApp.setActivationPolicy(.accessory)
+    }
 
     /// Diagnostic: CURATENIE_SNAPSHOT=/cale/prefix salvează capturi ale ferestrei (fără permisiune de înregistrare ecran).
     func applicationDidFinishLaunching(_ notification: Notification) {
         LoginItem.enableOnce()
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.willPowerOffNotification, object: nil, queue: .main) { _ in
+            AppDelegate.quitting = true
+        }
+        // Ultima fereastră închisă → dispare și din Dock.
+        NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: nil, queue: .main) { note in
+            guard let closing = note.object as? NSWindow, closing.canBecomeMain else { return }
+            DispatchQueue.main.async {
+                if !NSApp.windows.contains(where: { $0 !== closing && $0.canBecomeMain && $0.isVisible }) { AppDelegate.hideFromDock() }
+            }
+        }
         UNUserNotificationCenter.current().delegate = self
         Notifier.requestAuthorization()
         guard let prefix = ProcessInfo.processInfo.environment["CURATENIE_SNAPSHOT"] else { return }
@@ -539,8 +575,8 @@ struct MenuBarPanel: View {
             Divider()
             HStack {
                 Button("Deschide Cleaner") {
+                    AppDelegate.showInDock()
                     openWindow(id: "main")
-                    NSApp.activate(ignoringOtherApps: true)
                 }
                 .buttonStyle(.borderedProminent)
                 Button {
@@ -550,7 +586,10 @@ struct MenuBarPanel: View {
                 .help("Scanează din nou")
                 .disabled(rec.scanning || left.scanning)
                 Spacer()
-                Button("Ieșire") { NSApp.terminate(nil) }
+                Button("Ieșire") {
+                    AppDelegate.quitting = true
+                    NSApp.terminate(nil)
+                }
             }
         }
         .padding(16)
