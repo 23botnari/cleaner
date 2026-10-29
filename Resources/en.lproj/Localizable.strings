@@ -458,3 +458,7 @@
 "Nu are cache de curățat." = "No cache to clear.";
 "Se reface singur; setările, conturile și documentele rămân." = "Rebuilt automatically; settings, accounts and documents stay.";
 "curățarea cache-ului" = "clearing the cache";
+"Rulează acum — se sar, dacă nu bifezi închiderea:" = "Running now — skipped unless you tick quit:";
+"%@ — închide-l manual" = "%@ — quit it manually";
+"Închide și curăță" = "Quit and clean";
+"Sărite (rulează): %@." = "Skipped (running): %@.";

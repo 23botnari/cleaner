@@ -686,21 +686,29 @@ struct RiskMark: View {
 
 // MARK: - Curățare în bloc
 
-/// Confirmare → închiderea aplicațiilor → curățare secvențială → rezultat. Folosit din Prezentare și Recomandări.
+/// Confirmare → (opțional) închiderea aplicațiilor → curățare secvențială → rezultat. Folosit din Prezentare și Recomandări.
+/// Țintele blocate de o aplicație care rulează se sar, dacă nu bifezi închiderea ei.
 @MainActor
 final class CleanFlow: ObservableObject {
+    /// O aplicație (sau proces CLI) care rulează și blochează unele ținte.
+    struct Blocker: Identifiable {
+        let id: String
+        let name: String
+        let apps: [NSRunningApplication]
+        let targets: [CleanTarget]
+        /// Doar procesele CLI (sesiuni, Gradle, emulator) nu se pot închide de aici.
+        var quittable: Bool { !apps.isEmpty }
+    }
+
     struct Plan: Identifiable {
         let id = UUID()
+        /// Țintele libere, care se curăță oricum.
         let targets: [CleanTarget]
-        let bytes: Int64
-        let careCount: Int
-        let apps: [NSRunningApplication]
-        /// Procese fără interfață (sesiuni CLI, Gradle, emulator): țintele lor se sar.
-        let skipped: [CleanTarget]
+        let blockers: [Blocker]
     }
 
     @Published var plan: Plan?
-    @Published var forcePlan: Plan?
+    @Published var forcePlan: (plan: Plan, quit: Set<String>)?
     @Published var message: (title: String, body: String)?
     @Published var running = false
     weak var rec: RecommendationsStore?
@@ -712,40 +720,42 @@ final class CleanFlow: ObservableObject {
         guard !targets.isEmpty else { return }
         running = true
         Task {
-            var apps: [NSRunningApplication] = []
-            var skipped: [CleanTarget] = []
-            for t in targets where !t.procs.isEmpty {
+            var free: [CleanTarget] = []
+            var blockers: [Blocker] = []
+            for t in targets {
                 let procs = t.procs
-                guard await offMain({ Procs.running(procs) }) else { continue }
-                let gui = AppQuitter.matching(procs: procs)
-                if gui.isEmpty { skipped.append(t) }
-                for a in gui where !apps.contains(where: { $0.processIdentifier == a.processIdentifier }) { apps.append(a) }
+                guard !procs.isEmpty, await offMain({ Procs.running(procs) }) else { free.append(t); continue }
+                let key = t.appName ?? procs.joined(separator: ",")
+                if let i = blockers.firstIndex(where: { $0.id == key }) {
+                    let b = blockers[i]
+                    blockers[i] = Blocker(id: b.id, name: b.name, apps: b.apps, targets: b.targets + [t])
+                } else {
+                    blockers.append(Blocker(id: key, name: key, apps: AppQuitter.matching(procs: procs), targets: [t]))
+                }
             }
-            let skippedIDs = Set(skipped.map(\.id))
-            let run = targets.filter { !skippedIDs.contains($0.id) }
             running = false
-            plan = Plan(targets: run,
-                        bytes: run.reduce(0) { $0 + (rec.sizes[$1.id] ?? 0) },
-                        careCount: run.filter { $0.risk != .safe }.count,
-                        apps: apps, skipped: skipped)
+            plan = Plan(targets: free, blockers: blockers)
         }
     }
 
-    func confirm(_ p: Plan, force: Bool = false) {
+    func confirm(_ p: Plan, quit: Set<String>, force: Bool = false) {
         plan = nil
         forcePlan = nil
         guard let rec else { return }
         running = true
         Task {
-            if !p.apps.isEmpty, !(await AppQuitter.quit(p.apps, force: force)) {
+            let chosen = p.blockers.filter { quit.contains($0.id) && $0.quittable }
+            var seen = Set<pid_t>()
+            let apps = chosen.flatMap(\.apps).filter { seen.insert($0.processIdentifier).inserted }
+            if !apps.isEmpty, !(await AppQuitter.quit(apps, force: force)) {
                 running = false
-                forcePlan = p
+                forcePlan = (p, quit)
                 return
             }
             var freed: Int64 = 0
             var errors: [String] = []
             var trashed = false
-            for t in p.targets {
+            for t in p.targets + chosen.flatMap(\.targets) {
                 switch await rec.clean(t) {
                 case .success(let r):
                     freed += r.freed
@@ -755,14 +765,15 @@ final class CleanFlow: ObservableObject {
                     errors.append("\(t.name): \(e.message)")
                 }
             }
-            for t in p.skipped { errors.append(tr("Sărit, rulează încă: \(t.appName ?? t.name)")) }
+            let skipped = p.blockers.filter { !chosen.map(\.id).contains($0.id) }
             running = false
             let note = trashed ? "\n" + tr("Fișierele mutate la Coș eliberează spațiu după golirea Coșului.") : ""
+            let skipNote = skipped.isEmpty ? "" : "\n" + tr("Sărite (rulează): \(skipped.map(\.name).joined(separator: ", ")).")
             if errors.isEmpty {
-                message = (tr("Gata"), tr("Am eliberat \(Fmt.bytes(freed)).") + note)
+                message = (tr("Gata"), tr("Am eliberat \(Fmt.bytes(freed)).") + note + skipNote)
             } else {
                 message = (tr("Curățat parțial"),
-                           tr("Am eliberat \(Fmt.bytes(freed)).") + note + "\n\n" + errors.prefix(12).joined(separator: "\n"))
+                           tr("Am eliberat \(Fmt.bytes(freed)).") + note + skipNote + "\n\n" + errors.prefix(12).joined(separator: "\n"))
             }
         }
     }
@@ -784,8 +795,8 @@ private struct CleanFlowModifier: ViewModifier {
             .sheet(item: $flow.plan) { p in CleanConfirmSheet(plan: p, flow: flow) }
             .alert(Text("Unele aplicații nu s-au închis"),
                    isPresented: Binding(get: { flow.forcePlan != nil }, set: { if !$0 { flow.forcePlan = nil } }),
-                   presenting: flow.forcePlan) { p in
-                Button("Forțează închiderea", role: .destructive) { flow.confirm(p, force: true) }
+                   presenting: flow.forcePlan) { f in
+                Button("Forțează închiderea", role: .destructive) { flow.confirm(f.plan, quit: f.quit, force: true) }
                 Button("Anulează", role: .cancel) { flow.forcePlan = nil }
             } message: { _ in
                 Text("Probabil așteaptă un răspuns (ex. salvarea unui document). Verifică fereastra lor sau forțează închiderea; modificările nesalvate se pierd.")
@@ -807,51 +818,78 @@ private struct CleanFlowModifier: ViewModifier {
 struct CleanConfirmSheet: View {
     let plan: CleanFlow.Plan
     @ObservedObject var flow: CleanFlow
+    /// Aplicațiile bifate pentru închidere; implicit niciuna, țintele lor se sar.
+    @State private var quit: Set<String> = []
+
+    private var included: [CleanTarget] {
+        plan.targets + plan.blockers.filter { quit.contains($0.id) }.flatMap(\.targets)
+    }
+    private var bytes: Int64 { included.reduce(0) { $0 + (flow.rec?.sizes[$1.id] ?? 0) } }
+    private var careCount: Int { included.filter { $0.risk != .safe }.count }
+    private var quitting: Bool { plan.blockers.contains { quit.contains($0.id) } }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Curăță \(Fmt.bytes(plan.bytes))?").font(.title2.weight(.semibold))
-            Text(plan.careCount > 0
-                 ? tr("\(plan.targets.count) elemente, din care \(plan.careCount) marcate „Atenție”. Ce se șterge definitiv nu mai poate fi recuperat.")
-                 : tr("\(plan.targets.count) elemente, toate sigure: se refac singure la nevoie."))
+            Text("Curăță \(Fmt.bytes(bytes))?").font(.title2.weight(.semibold))
+            Text(careCount > 0
+                 ? tr("\(included.count) elemente, din care \(careCount) marcate „Atenție”. Ce se șterge definitiv nu mai poate fi recuperat.")
+                 : tr("\(included.count) elemente, toate sigure: se refac singure la nevoie."))
                 .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             ScrollView {
                 VStack(alignment: .leading, spacing: 4) {
-                    ForEach(plan.targets) { t in
-                        HStack {
-                            Text(t.name).lineLimit(1)
-                            RiskMark(risk: t.risk)
-                            Spacer()
-                            Text(Fmt.bytes(flow.rec?.sizes[t.id])).monospacedDigit().foregroundStyle(.secondary)
-                        }
-                        .font(.callout)
-                    }
+                    ForEach(plan.targets) { t in targetRow(t) }
                 }
             }
             .frame(maxHeight: 180)
-            if !plan.apps.isEmpty {
-                Label {
-                    Text("Se închid: \(plan.apps.compactMap(\.localizedName).joined(separator: ", ")). Dacă vreuna nu se închide în 10 secunde, te întreb dacă o forțez.")
-                } icon: { Image(systemName: "power") }
-                .font(.callout)
-            }
-            if !plan.skipped.isEmpty {
-                Label {
-                    Text("Se sar (rulează și nu se pot închide de aici): \(plan.skipped.map { $0.appName ?? $0.name }.joined(separator: ", ")).")
-                } icon: { Image(systemName: "exclamationmark.triangle") }
-                .font(.callout).foregroundStyle(.orange)
+            if !plan.blockers.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Rulează acum — se sar, dacă nu bifezi închiderea:")
+                        .font(.callout.weight(.semibold))
+                    ForEach(plan.blockers) { b in blockerRow(b) }
+                }
             }
             HStack {
                 Spacer()
                 Button("Anulează", role: .cancel) { flow.plan = nil }.keyboardShortcut(.cancelAction)
-                Button(plan.apps.isEmpty ? tr("Curăță") : tr("Închide aplicațiile și curăță")) { flow.confirm(plan) }
+                Button(quitting ? tr("Închide și curăță") : tr("Curăță")) { flow.confirm(plan, quit: quit) }
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
-                    .disabled(plan.targets.isEmpty)
+                    .disabled(included.isEmpty)
             }
         }
         .padding(22)
         .frame(width: 480)
+    }
+
+    private func targetRow(_ t: CleanTarget) -> some View {
+        HStack {
+            Text(t.name).lineLimit(1)
+            RiskMark(risk: t.risk)
+            Spacer()
+            Text(Fmt.bytes(flow.rec?.sizes[t.id])).monospacedDigit().foregroundStyle(.secondary)
+        }
+        .font(.callout)
+    }
+
+    @ViewBuilder
+    private func blockerRow(_ b: CleanFlow.Blocker) -> some View {
+        let size = b.targets.reduce(Int64(0)) { $0 + (flow.rec?.sizes[$1.id] ?? 0) }
+        HStack(alignment: .firstTextBaseline) {
+            if b.quittable {
+                Toggle(isOn: Binding(get: { quit.contains(b.id) },
+                                     set: { if $0 { quit.insert(b.id) } else { quit.remove(b.id) } })) {
+                    Text("Închide \(b.name)").lineLimit(1)
+                }
+                .toggleStyle(.checkbox)
+            } else {
+                Label { Text("\(b.name) — închide-l manual").lineLimit(1) } icon: { Image(systemName: "exclamationmark.triangle") }
+                    .foregroundStyle(.orange)
+            }
+            Spacer()
+            Text(Fmt.bytes(size)).monospacedDigit().foregroundStyle(.secondary)
+        }
+        .font(.callout)
+        .help(b.targets.map(\.name).joined(separator: "\n"))
     }
 }
 

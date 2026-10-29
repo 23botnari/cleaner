@@ -182,7 +182,13 @@ enum Cleaner {
                 errors.append("\(p): \(error.localizedDescription)")
             } catch {
                 // removeItem se oprește la primul fișier blocat; încearcă rm pentru restul.
-                let r = Shell.run("/bin/rm", ["-rf", "--", p])
+                var r = Shell.run("/bin/rm", ["-rf", "--", p])
+                if r.code != 0 {
+                    // Fișiere read-only / cu flag „uchg” (ex. .app-uri descărcate în cache): deblochează și reîncearcă.
+                    Shell.run("/usr/bin/chflags", ["-R", "nouchg,noschg", p], timeout: 300)
+                    Shell.run("/bin/chmod", ["-R", "u+w", p], timeout: 300)
+                    r = Shell.run("/bin/rm", ["-rf", "--", p])
+                }
                 if r.code != 0 {
                     errors += r.err.split(separator: "\n").map(String.init).filter { !$0.isEmpty }.prefix(3)
                 }
