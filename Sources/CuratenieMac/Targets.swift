@@ -278,6 +278,24 @@ enum Targets {
         return L
     }
 
+    /// Simulatoare pentru versiuni iOS care nu mai sunt instalate: nu pot porni, doar ocupă loc.
+    static func unavailableSimTargets() -> [CleanTarget] {
+        guard FileManager.default.isExecutableFile(atPath: xcrun) else { return [] }
+        let r = Shell.run(xcrun, ["simctl", "list", "devices", "unavailable", "-j"], timeout: 60)
+        guard r.code == 0, let data = r.out.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let byRuntime = json["devices"] as? [String: [[String: Any]]] else { return [] }
+        let devices = Paths.join(dev, "CoreSimulator", "Devices")
+        let dirs = byRuntime.values.flatMap { $0 }.compactMap { $0["udid"] as? String }.map { Paths.join(devices, $0) }
+        guard !dirs.isEmpty else { return [] }
+        return [CleanTarget(
+            id: "simunavailable", group: "Simulatoare iOS", name: "Simulatoare indisponibile (\(dirs.count))",
+            desc: "Simulatoare pentru versiuni iOS care nu mai sunt instalate; nu mai pot porni. Rulează „xcrun simctl delete unavailable”.",
+            procs: ["Simulator.app/Contents/MacOS"], appName: "Simulator",
+            cmds: [[xcrun, "simctl", "delete", "unavailable"]],
+            sizePaths: dirs)]
+    }
+
     static func simRuntimeTargets() -> [CleanTarget] {
         guard FileManager.default.isExecutableFile(atPath: xcrun) else { return [] }
         let r = Shell.run(xcrun, ["simctl", "runtime", "list", "-j"], timeout: 60)
@@ -306,13 +324,76 @@ enum Targets {
         return L.sorted { $0.name < $1.name }
     }
 
-    static func nodeModulesTargets() -> [CleanTarget] {
+    /// Proiectele atinse în ultimele zile nu se bifează implicit: probabil lucrezi la ele.
+    static let activeProjectDays: Double = 30
+
+    /// Foldere de build regenerabile, recunoscute doar lângă fișierul care le confirmă proiectul.
+    static let projectArtifacts: [(dir: String, markers: [String], what: String, regen: String)] = [
+        (".next", ["package.json"], "build Next.js", "Se regenerează la următorul next dev / build."),
+        (".nuxt", ["package.json"], "build Nuxt", "Se regenerează la următorul nuxt dev / build."),
+        (".svelte-kit", ["package.json"], "build SvelteKit", "Se regenerează la următorul vite dev / build."),
+        (".turbo", ["package.json", "turbo.json"], "cache Turborepo", "Se reface la următorul turbo run."),
+        (".parcel-cache", ["package.json"], "cache Parcel", "Se reface la următorul build."),
+        (".angular", ["angular.json"], "cache Angular", "Se reface la următorul ng serve / build."),
+        ("target", ["Cargo.toml"], "build Rust", "Se recompilează la următorul cargo build."),
+        ("target", ["pom.xml"], "build Maven", "Se recompilează la următorul mvn package."),
+        (".build", ["Package.swift"], "build Swift", "Se recompilează la următorul swift build."),
+        ("Pods", ["Podfile"], "dependențe CocoaPods", "Se reinstalează cu pod install."),
+        (".dart_tool", ["pubspec.yaml"], "cache Dart / Flutter", "Se reface la următorul flutter pub get."),
+        ("build", ["pubspec.yaml"], "build Flutter", "Se regenerează la următorul flutter build."),
+        ("build", ["build.gradle", "build.gradle.kts"], "build Gradle", "Se regenerează la următorul build Gradle."),
+        (".gradle", ["settings.gradle", "settings.gradle.kts", "build.gradle", "build.gradle.kts"], "cache Gradle al proiectului",
+         "Se reface la următorul build Gradle."),
+    ]
+
+    /// Ultima activitate în proiect: fișierele de pe primul nivel, folderul însuși și indexul git (până la 4 niveluri mai sus).
+    static func lastActivity(_ dir: String, skip: String) -> Date {
+        let fm = FileManager.default
+        func mtime(_ p: String) -> Date? {
+            var st = stat()
+            guard lstat(p, &st) == 0 else { return nil }
+            return Date(timeIntervalSince1970: TimeInterval(st.st_mtimespec.tv_sec))
+        }
+        var dates = [mtime(dir)]
+        for n in (try? fm.contentsOfDirectory(atPath: dir)) ?? [] where n != skip {
+            let p = Paths.join(dir, n)
+            if !Paths.isDir(p) { dates.append(mtime(p)) }
+        }
+        var cur = dir
+        for _ in 0..<5 {
+            let git = Paths.join(cur, ".git")
+            if Paths.lexists(git) {
+                dates += [mtime(Paths.join(git, "index")), mtime(Paths.join(git, "logs", "HEAD"))]
+                break
+            }
+            if cur == Paths.home || cur == Paths.realHome { break }
+            cur = (cur as NSString).deletingLastPathComponent
+        }
+        return dates.compactMap { $0 }.max() ?? Date(timeIntervalSince1970: 0)
+    }
+
+    static func projectArtifactTargets() -> [CleanTarget] {
         var L: [CleanTarget] = []
         let home = Paths.home
         let skipTop: Set<String> = ["Library", "Pictures", "Music", "Movies", "Applications", "Public"]
         let df = DateFormatter()
         df.dateFormat = "dd.MM.yyyy"
         let fm = FileManager.default
+        let cutoff = Date().addingTimeInterval(-activeProjectDays * 24 * 3600)
+
+        func target(id: String, group: String, full: String, dir: String, what: String, regen: String) -> CleanTarget {
+            let last = lastActivity(dir, skip: (full as NSString).lastPathComponent)
+            let active = last > cutoff
+            let days = max(0, Int(Date().timeIntervalSince(last) / (24 * 3600)))
+            let rel = Paths.relative(dir, to: home)
+            return CleanTarget(
+                id: id + full, group: group,
+                name: group == "node_modules din proiecte" ? rel : "\(rel) — \(what)",
+                desc: "Ultima activitate în proiect: \(df.string(from: last)) (acum \(days) zile). \(regen)"
+                    + (active ? " Lucrezi recent la el, așa că nu e bifat implicit." : ""),
+                risk: active ? .care : .safe,
+                resolve: { Paths.existing([full]) })
+        }
 
         func walk(_ dir: String, depth: Int) {
             guard let names = try? fm.contentsOfDirectory(atPath: dir) else { return }
@@ -320,14 +401,14 @@ enum Targets {
                 let full = Paths.join(dir, d)
                 var st = stat()
                 guard lstat(full, &st) == 0, (st.st_mode & S_IFMT) == S_IFDIR else { continue } // fără symlink-uri
+                // Pachetele (.app, .bundle…) au node_modules proprii: ștergerea ar strica aplicația.
+                if (try? URL(fileURLWithPath: full).resourceValues(forKeys: [.isPackageKey]))?.isPackage == true { continue }
                 if d == "node_modules" {
-                    let pkg = Paths.join(dir, "package.json")
-                    let src = fm.fileExists(atPath: pkg) ? pkg : dir
-                    let mt = (try? fm.attributesOfItem(atPath: src)[.modificationDate] as? Date) ?? Date(timeIntervalSince1970: 0)
-                    L.append(CleanTarget(
-                        id: "nm:" + full, group: "node_modules din proiecte", name: Paths.relative(dir, to: home),
-                        desc: "Proiect modificat ultima dată pe \(df.string(from: mt)). Se reinstalează cu npm / yarn / pnpm install.",
-                        resolve: { Paths.existing([full]) }))
+                    L.append(target(id: "nm:", group: "node_modules din proiecte", full: full, dir: dir, what: "node_modules",
+                                    regen: "Se reinstalează cu npm / yarn / pnpm install."))
+                } else if dir != home,
+                          let a = projectArtifacts.first(where: { $0.dir == d && $0.markers.contains { Paths.lexists(Paths.join(dir, $0)) } }) {
+                    L.append(target(id: "art:", group: "Build-uri din proiecte", full: full, dir: dir, what: a.what, regen: a.regen))
                 } else if d.hasPrefix(".") || (dir == home && skipTop.contains(d)) {
                     continue
                 } else if depth < 7 {

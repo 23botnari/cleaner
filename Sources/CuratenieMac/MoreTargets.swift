@@ -20,11 +20,48 @@ extension Targets {
             fixedSize: parseBrewFree(r.out + r.err))]
     }
 
+    static let goCLI: String? = ["/opt/homebrew/bin/go", "/usr/local/go/bin/go", "/usr/local/bin/go"]
+        .first { FileManager.default.isExecutableFile(atPath: $0) }
+
+    static let jetBrainsProcs = ["IntelliJ IDEA.app/Contents/MacOS", "WebStorm.app/Contents/MacOS", "PyCharm.app/Contents/MacOS",
+                                 "GoLand.app/Contents/MacOS", "RustRover.app/Contents/MacOS", "CLion.app/Contents/MacOS",
+                                 "PhpStorm.app/Contents/MacOS", "Rider.app/Contents/MacOS", "DataGrip.app/Contents/MacOS",
+                                 "RubyMine.app/Contents/MacOS", "Fleet.app/Contents/MacOS", "Android Studio.app/Contents/MacOS"]
+
     static func devCacheTargets() -> [CleanTarget] {
         let g = "Dezvoltare"
         let C = Paths.hp("Library", "Caches")
         let tmp = Paths.realTmp
-        return [
+        var L: [CleanTarget] = []
+        if let go = goCLI {
+            // Modulele Go sunt read-only: le șterge doar `go clean`, nu rm.
+            L.append(CleanTarget(id: "gomod", group: g, name: "Go: module descărcate",
+                                 desc: "Rulează „go clean -modcache”. Modulele se redescarcă la următorul go build.",
+                                 cmds: [[go, "clean", "-modcache"]],
+                                 sizePaths: [Paths.hp("go", "pkg", "mod")]))
+        }
+        return L + [
+            CleanTarget(id: "cargo", group: g, name: "Rust: cache Cargo",
+                        desc: "Crate-uri descărcate și surse dezarhivate. Se redescarcă la următorul cargo build. Indexul registrului rămâne.",
+                        procs: ["=cargo"], appName: "cargo",
+                        resolve: { Paths.existing([Paths.hp(".cargo", "registry", "cache"), Paths.hp(".cargo", "registry", "src"),
+                                                   Paths.hp(".cargo", "git", "checkouts")]) }),
+            CleanTarget(id: "gobuild", group: g, name: "Go: cache de build",
+                        desc: "Rezultate de compilare refolosite. Se refac la următorul go build.",
+                        resolve: { Paths.existing([Paths.join(C, "go-build")]) }),
+            CleanTarget(id: "maven", group: g, name: "Maven: depozit local (~/.m2)",
+                        desc: "Dependențe Java descărcate. Se redescarcă la următorul build. "
+                            + "Pachetele publicate doar local (mvn install) trebuie reconstruite.",
+                        risk: .care, procs: ["org.codehaus.plexus.classworlds"], appName: "Maven",
+                        resolve: { Paths.existing([Paths.hp(".m2", "repository")]) }),
+            CleanTarget(id: "jetbrains", group: g, name: "JetBrains / Android Studio: cache și log-uri",
+                        desc: "Indexuri și log-uri ale IDE-urilor. Setările, pluginurile și proiectele rămân; la prima deschidere IDE-ul reindexează.",
+                        procs: jetBrainsProcs, appName: "IDE-urile JetBrains / Android Studio",
+                        resolve: {
+                            Paths.children(Paths.join(C, "JetBrains")) + Paths.children(Paths.hp("Library", "Logs", "JetBrains"))
+                                + (Paths.children(Paths.join(C, "Google")) + Paths.children(Paths.hp("Library", "Logs", "Google")))
+                                    .filter { ($0 as NSString).lastPathComponent.hasPrefix("AndroidStudio") }
+                        }),
             CleanTarget(id: "yarn", group: g, name: "Yarn: cache",
                         desc: "Pachete descărcate de Yarn. Se redescarcă la următorul yarn install.",
                         resolve: { Paths.existing([Paths.join(C, "Yarn"), Paths.hp(".yarn", "berry", "cache")]) }),
@@ -45,6 +82,43 @@ extension Targets {
                             return n.hasPrefix("metro-") || n.hasPrefix("haste-map-") || n.hasPrefix("react-native-packager-cache-")
                         } }),
         ]
+    }
+
+    static func aiModelTargets() -> [CleanTarget] {
+        let g = "Modele AI locale"
+        var L: [CleanTarget] = []
+        // Ollama împarte blob-urile între modele: doar tot folderul se poate șterge sigur din afară.
+        L.append(CleanTarget(
+            id: "ollama", group: g, name: "Ollama: toate modelele",
+            desc: "Modelele descărcate cu ollama pull. Se descarcă din nou la nevoie (adesea câțiva GB fiecare).",
+            risk: .care, procs: ["=ollama", "Ollama.app/Contents/MacOS"], appName: "Ollama (inclusiv din bara de meniu)",
+            resolve: { Paths.existing([Paths.hp(".ollama", "models")]) }))
+        // LM Studio: models/<editor>/<model>.
+        for root in [Paths.hp(".lmstudio", "models"), Paths.hp(".cache", "lm-studio", "models")] {
+            for pub in Paths.children(root) where Paths.isDir(pub) {
+                for model in Paths.children(pub) where Paths.isDir(model) {
+                    L.append(CleanTarget(
+                        id: "lmstudio:" + model, group: g, name: "LM Studio: \(Paths.relative(model, to: root))",
+                        desc: "Model descărcat în LM Studio. Se descarcă din nou din tab-ul Discover.",
+                        risk: .care, procs: ["LM Studio.app/Contents/MacOS"], appName: "LM Studio",
+                        resolve: { Paths.existing([model]) }))
+                }
+            }
+        }
+        // Hugging Face: hub/models--<org>--<nume>, hub/datasets--…
+        let hf = ProcessInfo.processInfo.environment["HF_HOME"].map { Paths.join($0, "hub") } ?? Paths.hp(".cache", "huggingface", "hub")
+        for d in Paths.children(hf) where Paths.isDir(d) {
+            let n = (d as NSString).lastPathComponent
+            guard let kind = ["models--": "Model", "datasets--": "Set de date", "spaces--": "Space"]
+                .first(where: { n.hasPrefix($0.key) }) else { continue }
+            let name = n.dropFirst(kind.key.count).replacingOccurrences(of: "--", with: "/")
+            L.append(CleanTarget(
+                id: "hf:" + d, group: g, name: "Hugging Face: \(name)",
+                desc: "\(kind.value) din cache-ul Hugging Face. Se descarcă din nou la prima folosire.",
+                risk: .care,
+                resolve: { Paths.existing([d]) }))
+        }
+        return L
     }
 
     static func iosDeviceTargets() -> [CleanTarget] {

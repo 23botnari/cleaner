@@ -77,14 +77,14 @@ final class RecommendationsStore: ObservableObject {
         refreshDisk()
         Task {
             let found = await offMain {
-                (Targets.staticTargets() + Targets.claudeTargets() + Targets.dockerTargets() + Targets.simRuntimeTargets() + Targets.androidTargets()
+                (Targets.staticTargets() + Targets.claudeTargets() + Targets.dockerTargets() + Targets.simRuntimeTargets() + Targets.unavailableSimTargets() + Targets.androidTargets()
                     + Targets.homebrewTargets() + Targets.devCacheTargets() + Targets.iosDeviceTargets() + Targets.downloadsTargets()
-                    + Targets.timeMachineTargets() + Targets.browserTargets()).filter(\.isVisible)
+                    + Targets.timeMachineTargets() + Targets.browserTargets() + Targets.aiModelTargets()).filter(\.isVisible)
             }
             guard gen == generation else { return }
             targets = found
             scanning = false
-            let nmTask = Task { await offMain { Targets.nodeModulesTargets() + Targets.duplicateTargets() } }
+            let nmTask = Task { await offMain { Targets.projectArtifactTargets() + Targets.duplicateTargets() } }
             await computeSizes(found, gen: gen)
             let nm = await nmTask.value
             guard gen == generation else { return }
