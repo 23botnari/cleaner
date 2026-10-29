@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import SwiftUI
 
 // MARK: - Procese externe
 
@@ -171,6 +172,82 @@ enum Procs {
         patterns.contains { p in
             let args = p.hasPrefix("=") ? ["-x", String(p.dropFirst())] : ["-f", p]
             return Shell.run("/usr/bin/pgrep", args, timeout: 20).code == 0
+        }
+    }
+}
+
+/// Închiderea aplicațiilor care blochează o curățare / dezinstalare.
+@MainActor
+enum AppQuitter {
+    private static let ownPID = ProcessInfo.processInfo.processIdentifier
+
+    /// Aplicațiile cu interfață ale căror executabile se potrivesc cu tiparele `pgrep -f` (cele „=nume” sunt procese CLI).
+    static func matching(procs: [String]) -> [NSRunningApplication] {
+        let patterns = procs.filter { !$0.hasPrefix("=") }
+        return NSWorkspace.shared.runningApplications.filter { app in
+            guard app.processIdentifier != ownPID, let exe = app.executableURL?.path else { return false }
+            return patterns.contains { exe.contains($0) }
+        }
+    }
+
+    static func matching(bundleID: String, path: String) -> [NSRunningApplication] {
+        let real = Paths.realpath(path)
+        return NSWorkspace.shared.runningApplications.filter { app in
+            guard app.processIdentifier != ownPID else { return false }
+            return (!bundleID.isEmpty && app.bundleIdentifier == bundleID)
+                || app.bundleURL.map { Paths.realpath($0.path) } == real
+        }
+    }
+
+    /// Cere închiderea normală (aplicația poate întreba de salvare); `force` o oprește imediat.
+    /// Întoarce true dacă toate s-au închis în `timeout` secunde.
+    static func quit(_ apps: [NSRunningApplication], force: Bool = false, timeout: Double = 10) async -> Bool {
+        for app in apps { _ = force ? app.forceTerminate() : app.terminate() }
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if apps.allSatisfy(\.isTerminated) { return true }
+            try? await Task.sleep(nanoseconds: 250_000_000)
+        }
+        return apps.allSatisfy(\.isTerminated)
+    }
+}
+
+/// Dialog „X rulează” cu opțiunea de a închide aplicația și a continua.
+struct QuitPrompt: Identifiable {
+    let id = UUID()
+    let name: String
+    let apps: [NSRunningApplication]
+    let action: String
+    /// Ce se întâmplă după ce aplicația s-a închis.
+    let then: @MainActor () -> Void
+    /// A doua încercare, după ce închiderea normală nu a mers.
+    var forced = false
+}
+
+extension View {
+    func quitPrompt(_ prompt: Binding<QuitPrompt?>, message: Binding<(title: String, body: String)?>) -> some View {
+        alert(prompt.wrappedValue.map { $0.forced ? "„\($0.name)” nu s-a închis" : "„\($0.name)” rulează" } ?? "",
+              isPresented: Binding(get: { prompt.wrappedValue != nil }, set: { if !$0 { prompt.wrappedValue = nil } }),
+              presenting: prompt.wrappedValue) { p in
+            Button(p.forced ? "Forțează închiderea" : "Închide \(p.name)", role: p.forced ? .destructive : nil) {
+                prompt.wrappedValue = nil
+                Task { @MainActor in
+                    if await AppQuitter.quit(p.apps, force: p.forced) {
+                        p.then()
+                    } else if !p.forced {
+                        var next = QuitPrompt(name: p.name, apps: p.apps, action: p.action, then: p.then)
+                        next.forced = true
+                        prompt.wrappedValue = next
+                    } else {
+                        message.wrappedValue = ("„\(p.name)” încă rulează", "Închide-o manual, apoi încearcă din nou.")
+                    }
+                }
+            }
+            Button("Anulează", role: .cancel) { prompt.wrappedValue = nil }
+        } message: { p in
+            Text(p.forced
+                 ? "Probabil așteaptă un răspuns (ex. salvarea unui document). Verifică fereastra ei sau forțează închiderea; modificările nesalvate se pierd."
+                 : "Trebuie închisă înainte de \(p.action). O închid acum, apoi continui.")
         }
     }
 }

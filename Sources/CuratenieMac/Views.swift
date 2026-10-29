@@ -291,6 +291,7 @@ struct RecommendationsView: View {
     @State private var confirm: CleanTarget?
     @State private var message: (title: String, body: String)?
     @State private var checking: String?
+    @State private var quit: QuitPrompt?
 
     var body: some View {
         ScrollView {
@@ -341,6 +342,7 @@ struct RecommendationsView: View {
         } message: {
             Text(message?.body ?? "")
         }
+        .quitPrompt($quit, message: $message)
     }
 
     @ViewBuilder
@@ -391,8 +393,13 @@ struct RecommendationsView: View {
         Task {
             let blocker = await store.blocker(for: t)
             checking = nil
-            if let blocker {
+            let apps = blocker == nil ? [] : AppQuitter.matching(procs: t.procs)
+            if let blocker, apps.isEmpty {
+                // Procese fără interfață (Gradle, emulator, sesiuni CLI): doar mesaj.
                 message = ("\(t.appName ?? "Aplicația") rulează", blocker)
+            } else if blocker != nil {
+                let name = apps.first?.localizedName ?? t.appName ?? "aplicația"
+                quit = QuitPrompt(name: name, apps: apps, action: "curățare") { ask(t) }
             } else {
                 confirm = t
             }

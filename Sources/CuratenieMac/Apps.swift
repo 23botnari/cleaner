@@ -231,6 +231,7 @@ struct AppsView: View {
     @ObservedObject var store: AppsStore
     var onChange: () -> Void
     @State private var sheetApp: AppEntry?
+    @State private var quit: QuitPrompt?
     @State private var message: (title: String, body: String)?
 
     static let dateFmt: DateFormatter = {
@@ -278,6 +279,7 @@ struct AppsView: View {
         .alert(message?.title ?? "", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
             Button("OK") { message = nil }
         } message: { Text(message?.body ?? "") }
+        .quitPrompt($quit, message: $message)
     }
 
     @ViewBuilder
@@ -331,10 +333,11 @@ struct AppsView: View {
     }
 
     private func ask(_ a: AppEntry) {
-        if AppScanner.runningApp(a) {
-            message = ("„\(a.name)” rulează", "Închide \(a.name) înainte de dezinstalare.")
-        } else {
+        let running = AppQuitter.matching(bundleID: a.bundleID, path: a.path)
+        if running.isEmpty {
             sheetApp = a
+        } else {
+            quit = QuitPrompt(name: a.name, apps: running, action: "dezinstalare") { ask(a) }
         }
     }
 }
