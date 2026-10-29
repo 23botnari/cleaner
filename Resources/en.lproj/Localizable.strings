@@ -448,3 +448,13 @@
 "Zilnic" = "Daily";
 "Închide și dezinstalează" = "Quit and uninstall";
 "⌘," = "⌘,";
+"%@ din %lld foldere. Se șterge definitiv, dar aplicația îl reface singură; setările și conturile rămân." = "%@ in %lld folders. Deleted permanently, but the app rebuilds it on its own; settings and accounts stay.";
+"Am eliberat %@ din cache-ul „%@”. Se reface la nevoie." = "Freed %@ from the “%@” cache. It is rebuilt when needed.";
+"Cache" = "Cache";
+"Cache curățat" = "Cache cleared";
+"Curăți cache-ul „%@”?" = "Clear the “%@” cache?";
+"Curăță cache" = "Clear cache";
+"Curăță cache · %@" = "Clear cache · %@";
+"Nu are cache de curățat." = "No cache to clear.";
+"Se reface singur; setările, conturile și documentele rămân." = "Rebuilt automatically; settings, accounts and documents stay.";
+"curățarea cache-ului" = "clearing the cache";

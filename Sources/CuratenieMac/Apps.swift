@@ -104,6 +104,54 @@ enum AppScanner {
     }
 
     /// Fișiere lăsate de aplicație în ~/Library, după bundle ID (și numele exact al aplicației).
+    /// Doar cache-uri (se refac singure): fără setări, conturi sau documente.
+    static let electronCacheDirs = ["Cache", "Code Cache", "GPUCache", "DawnGraphiteCache", "DawnWebGPUCache",
+                                    "ShaderCache", "GrShaderCache", "Service Worker/CacheStorage", "Service Worker/ScriptCache",
+                                    "CachedData", "CachedExtensionVSIXs"]
+
+    static func caches(for app: AppEntry) -> [Leftover] {
+        let b = app.bundleID
+        guard !b.isEmpty else { return [] }
+        let L = Paths.hp("Library")
+        let appFile = ((app.path as NSString).lastPathComponent as NSString).deletingPathExtension
+        var c: [String] = [
+            Paths.join(L, "Caches", b),
+            Paths.join(L, "Containers", b, "Data", "Library", "Caches"),
+            Paths.join(L, "Application Support", b, "Caches"),
+        ]
+        var supportDirs = [Paths.join(L, "Application Support", b)]
+        let idLower = b.lowercased()
+        for n in Set([app.name, appFile]) where n.count >= 4
+            && idLower.contains(n.lowercased().replacingOccurrences(of: " ", with: "")) {
+            c.append(Paths.join(L, "Caches", n))
+            supportDirs.append(Paths.join(L, "Application Support", n))
+        }
+        // Aplicații Electron / Chromium: cache-urile stau în Application Support/<nume>.
+        for d in supportDirs { c += electronCacheDirs.map { Paths.join(d, $0) } }
+        var seen = Set<String>()
+        return c.filter { Paths.lexists($0) && Paths.deletable($0) && seen.insert(Paths.realpath($0)).inserted }
+            .map { Leftover(path: $0, size: Sizer.du([$0])) }
+            .filter { $0.size > 0 }
+            .sorted { $0.size > $1.size }
+    }
+
+    /// Șterge definitiv cache-urile (nu la Coș: se regenerează). Întoarce eliberat + erori.
+    static func clearCaches(_ list: [Leftover]) -> (freed: Int64, errors: [String]) {
+        var freed: Int64 = 0
+        var errors: [String] = []
+        for l in list {
+            guard Paths.deletable(l.path) else { errors.append(tr("Sărit (protejat): \(l.display)")); continue }
+            do {
+                try FileManager.default.removeItem(atPath: l.path)
+                freed += l.size
+            } catch {
+                let r = Shell.run("/bin/rm", ["-rf", "--", l.path])
+                if r.code == 0 { freed += l.size } else { errors.append("\(l.display): \(error.localizedDescription)") }
+            }
+        }
+        return (freed, errors)
+    }
+
     static func leftovers(for app: AppEntry) -> [Leftover] {
         let b = app.bundleID
         guard !b.isEmpty else { return [] }
@@ -233,6 +281,8 @@ struct AppsView: View {
     @State private var selectedID: String?
     @State private var quit: QuitPrompt?
     @State private var message: (title: String, body: String)?
+    /// Reîncarcă inspectorul după curățarea cache-ului.
+    @State private var refresh = 0
 
     static let dateFmt: DateFormatter = {
         let f = DateFormatter()
@@ -272,8 +322,10 @@ struct AppsView: View {
             Rectangle().fill(Theme.line).frame(width: 1)
             Group {
                 if let selected {
-                    AppInspector(app: selected, uninstall: { chosen in ask(selected, chosen: chosen) })
-                        .id(selected.id)
+                    AppInspector(app: selected,
+                                 uninstall: { chosen in ask(selected, chosen: chosen) },
+                                 cleanCache: { list in clearCache(selected, list) })
+                        .id("\(selected.id)#\(refresh)")
                 } else {
                     Text("Alege o aplicație.").foregroundStyle(Theme.muted)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -303,16 +355,13 @@ struct AppsView: View {
                 Image(nsImage: NSWorkspace.shared.icon(forFile: a.path)).resizable().frame(width: 40, height: 40)
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 8) {
+                        if AppScanner.runningApp(a) {
+                            Circle().fill(Theme.reclaim).frame(width: 7, height: 7)
+                                .help(tr("Rulează"))
+                                .accessibilityLabel(Text("Rulează"))
+                        }
                         Text(a.name).fontWeight(.semibold).lineLimit(1).layoutPriority(2)
                         VolumePill(volume: a.volume)
-                        if AppScanner.runningApp(a) {
-                            HStack(spacing: 4) {
-                                Circle().fill(Theme.reclaim).frame(width: 6, height: 6)
-                                Text("Rulează")
-                            }
-                            .font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.safeFg)
-                            .fixedSize()
-                        }
                     }
                     Text(a.path).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(Theme.muted)
                         .lineLimit(1).truncationMode(.middle)
@@ -349,6 +398,27 @@ struct AppsView: View {
         .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(on ? Theme.accent : Theme.line, lineWidth: on ? 1.5 : 1))
         .opacity(a.volume.isInternal ? 1 : 0.8)
         .accessibilityAddTraits(on ? .isSelected : [])
+    }
+
+    private func clearCache(_ a: AppEntry, _ list: [Leftover]) {
+        let running = AppQuitter.matching(bundleID: a.bundleID, path: a.path)
+        guard running.isEmpty else {
+            quit = QuitPrompt(name: a.name, apps: running, action: tr("curățarea cache-ului")) { clearCache(a, list) }
+            return
+        }
+        Task {
+            let r = await offMain { AppScanner.clearCaches(list) }
+            let data = await offMain { AppScanner.leftovers(for: a) }
+            if let i = store.apps.firstIndex(where: { $0.path == a.path }) {
+                store.apps[i].dataSize = data.reduce(0) { $0 + $1.size }
+                store.apps[i].dataTop = data.first.map { $0.display }
+            }
+            refresh += 1
+            onChange()
+            message = r.errors.isEmpty
+                ? (tr("Cache curățat"), tr("Am eliberat \(Fmt.bytes(r.freed)) din cache-ul „\(a.name)”. Se reface la nevoie."))
+                : (tr("Curățat parțial"), tr("Am eliberat \(Fmt.bytes(r.freed)).") + "\n\n" + r.errors.prefix(12).joined(separator: "\n"))
+        }
     }
 
     private func ask(_ a: AppEntry, chosen: [Leftover]) {
@@ -406,7 +476,10 @@ enum Uninstaller {
 struct AppInspector: View {
     let app: AppEntry
     var uninstall: ([Leftover]) -> Void
+    var cleanCache: ([Leftover]) -> Void
     @State private var leftovers: [Leftover]?
+    @State private var caches: [Leftover]?
+    @State private var confirmingCache = false
     @State private var keep: Set<String> = []
     @State private var confirming = false
 
@@ -452,6 +525,7 @@ struct AppInspector: View {
                         notice("exclamationmark.triangle", Theme.careBg, Theme.careFg,
                                tr("Are componente de sistem. Folosește dezinstalatorul ei, altfel pot rămâne servicii active."))
                     }
+                    cacheSection
                     if blocked == nil {
                         Text("Se mută la Coș").font(.system(size: 13, weight: .bold))
                         HStack(spacing: 10) {
@@ -523,7 +597,15 @@ struct AppInspector: View {
         }
         .task {
             let a = app
+            async let c = offMain { AppScanner.caches(for: a) }
             leftovers = await offMain { AppScanner.leftovers(for: a) }
+            caches = await c
+        }
+        .confirmationDialog(Text("Curăți cache-ul „\(app.name)”?"), isPresented: $confirmingCache, titleVisibility: .visible) {
+            Button("Curăță cache") { cleanCache(caches ?? []) }
+            Button("Anulează", role: .cancel) {}
+        } message: {
+            Text("\(Fmt.bytes((caches ?? []).reduce(0) { $0 + $1.size })) din \((caches ?? []).count) foldere. Se șterge definitiv, dar aplicația îl reface singură; setările și conturile rămân.")
         }
         .confirmationDialog(Text("Muți „\(app.name)” la Coș?"), isPresented: $confirming, titleVisibility: .visible) {
             Button("Dezinstalează", role: .destructive) { uninstall(chosen) }
@@ -531,6 +613,41 @@ struct AppInspector: View {
         } message: {
             Text("\(Fmt.bytes(bytes)) în \(chosen.count + 1) elemente. Totul se poate recupera din Coș până îl golești.")
         }
+    }
+
+    @ViewBuilder
+    private var cacheSection: some View {
+        let total = (caches ?? []).reduce(Int64(0)) { $0 + $1.size }
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Cache").font(.system(size: 13, weight: .bold))
+                Spacer()
+                if caches == nil { ProgressView().controlSize(.small) }
+                else { Text(Fmt.bytes(total)).fontWeight(.bold).monospacedDigit() }
+            }
+            if let caches {
+                if caches.isEmpty {
+                    Text("Nu are cache de curățat.").font(.system(size: 12.5)).foregroundStyle(Theme.muted)
+                } else {
+                    ForEach(caches) { l in
+                        HStack {
+                            Text(l.display).font(.system(size: 12, design: .monospaced)).foregroundStyle(Theme.muted)
+                                .lineLimit(1).truncationMode(.head).help(l.display)
+                            Spacer()
+                            Text(Fmt.bytes(l.size)).font(.system(size: 12.5)).monospacedDigit()
+                        }
+                    }
+                    Button { confirmingCache = true } label: {
+                        Label("Curăță cache · \(Fmt.bytes(total))", systemImage: "trash")
+                    }
+                    .buttonStyle(SecondaryButtonStyle(height: 32, tinted: true))
+                    Text("Se reface singur; setările, conturile și documentele rămân.")
+                        .font(.system(size: 12)).foregroundStyle(Theme.muted)
+                }
+            }
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Theme.lineSoft))
     }
 
     private func stat(_ label: LocalizedStringKey, _ value: String) -> some View {
