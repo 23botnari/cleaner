@@ -8,12 +8,12 @@ enum LeftoverKind: Int, Sendable, CaseIterable {
 
     var title: String {
         switch self {
-        case .halfUninstalled: "Aplicații dezinstalate pe jumătate"
-        case .emptyLaunch: "Plist-uri de pornire goale"
-        case .orphanLaunch: "LaunchAgents / LaunchDaemons orfani"
-        case .vendor: "Resturi de antivirus / cleaner"
-        case .bloat: "Aplicații cu servicii de fundal (sugestie)"
-        case .orphanContainer: "Containere fără aplicație (suspecte)"
+        case .halfUninstalled: tr("Aplicații dezinstalate pe jumătate")
+        case .emptyLaunch: tr("Plist-uri de pornire goale")
+        case .orphanLaunch: tr("LaunchAgents / LaunchDaemons orfani")
+        case .vendor: tr("Resturi de antivirus / cleaner")
+        case .bloat: tr("Aplicații cu servicii de fundal (sugestie)")
+        case .orphanContainer: tr("Containere fără aplicație (suspecte)")
         }
     }
 }
@@ -221,16 +221,16 @@ enum LeftoverScanner {
             let rest = entries.filter { $0 != dir && name($0).lowercased().contains(token) }
             guard !rest.isEmpty else { continue }
             let support = rest.filter { r in inst.paths.contains { $0.hasPrefix(r + "/") } }
-            var detail = "Folderul /Applications/\(name(dir)) e gol, dar au rămas \(rest.count) elemente (suport, plist-uri de pornire, containere)."
+            var detail = tr("Folderul /Applications/\(name(dir)) e gol, dar au rămas \(rest.count) elemente (suport, plist-uri de pornire, containere).")
             if !support.isEmpty {
-                detail += " În \(support.map(name).joined(separator: ", ")) încă există componente (ex. extensii sau drivere)."
+                detail += tr(" În \(support.map(name).joined(separator: ", ")) încă există componente (ex. extensii sau drivere).")
             }
             if token == "bit4id" {
-                detail += " bit4id e middleware-ul PKCS#11 pentru tokenuri de semnătură electronică. Șterge doar dacă nu mai folosești tokenul."
+                detail += tr(" bit4id e middleware-ul PKCS#11 pentru tokenuri de semnătură electronică. Șterge doar dacă nu mai folosești tokenul.")
             } else {
-                detail += " Poate fi middleware folosit de altă aplicație; confirmă că nu-l folosești."
+                detail += tr(" Poate fi middleware folosit de altă aplicație; confirmă că nu-l folosești.")
             }
-            make("half:" + dir, .halfUninstalled, "\(name(dir)): rest de dezinstalare", detail, .care, [dir] + rest)
+            make("half:" + dir, .halfUninstalled, tr("\(name(dir)): rest de dezinstalare"), detail, .care, [dir] + rest)
         }
 
         // 2. Plist-uri de launch fără program, grupate după prefix (ex. com.google.keystone) + preferințele lor.
@@ -243,9 +243,8 @@ enum LeftoverScanner {
             emptyGroups[key]! += prefs.filter { name($0).lowercased() == stem + ".plist" }
         }
         for (key, paths) in emptyGroups.sorted(by: { $0.key < $1.key }) {
-            make("empty:" + key, .emptyLaunch, "\(key): plist-uri de pornire goale",
-                 "Fișiere de pornire fără Program / ProgramArguments: nu pornesc nimic. Probabil rămase de la o versiune veche "
-                    + "(ex. Google Keystone, înlocuit de GoogleUpdater).", .safe, paths)
+            make("empty:" + key, .emptyLaunch, tr("\(key): plist-uri de pornire goale"),
+                 tr("Fișiere de pornire fără Program / ProgramArguments: nu pornesc nimic. Probabil rămase de la o versiune veche (ex. Google Keystone, înlocuit de GoogleUpdater)."), .safe, paths)
         }
 
         // 1. Plist-uri de launch al căror binar (sau fișier din /Applications primit ca argument) nu mai există.
@@ -254,7 +253,7 @@ enum LeftoverScanner {
             let missingArgs = p.args.dropFirst().filter { $0.hasPrefix("/Applications/") && missing($0) }
             guard missing(prog) || !missingArgs.isEmpty else { continue }
             let what = missing(prog) ? prog : missingArgs[0]
-            make("orphan:" + p.path, .orphanLaunch, p.label ?? name(p.path), "Pornește „\(what)”, care nu mai există.", .safe, [p.path])
+            make("orphan:" + p.path, .orphanLaunch, p.label ?? name(p.path), tr("Pornește „\(what)”, care nu mai există."), .safe, [p.path])
         }
 
         // 4. Resturi de antivirus / cleaner al căror vendor nu mai e instalat.
@@ -265,8 +264,8 @@ enum LeftoverScanner {
                 claimed.formUnion(hits)  // aparțin unei aplicații instalate (ex. grupul Avast al CCleaner)
                 continue
             }
-            make("vendor:" + v.token, .vendor, "\(v.token.capitalized): resturi",
-                 "Fișiere \(v.token.capitalized) rămase după dezinstalare; nicio aplicație a vendorului nu mai e instalată.", .safe, hits)
+            make("vendor:" + v.token, .vendor, tr("\(v.token.capitalized): resturi"),
+                 tr("Fișiere \(v.token.capitalized) rămase după dezinstalare; nicio aplicație a vendorului nu mai e instalată."), .safe, hits)
         }
 
         // 6. Aplicații instalate cu mulți daemoni: doar sugestie, prin dezinstalatorul lor.
@@ -281,8 +280,8 @@ enum LeftoverScanner {
             let daemons = own.filter { $0.hasPrefix("/Library/LaunchDaemons/") }.count
             let unin = Paths.join(app, "Contents", "Uninstaller.app")
             out.append(LeftoverFinding(
-                id: "bloat:" + b.name, kind: .bloat, title: "\(b.name): \(daemons) LaunchDaemons + \(own.count - daemons) LaunchAgents",
-                detail: "Servicii de fundal (telemetrie, actualizări). Dacă nu folosești \(b.name), dezinstalează-l cu dezinstalatorul propriu, nu prin ștergere.",
+                id: "bloat:" + b.name, kind: .bloat, title: tr("\(b.name): \(daemons) LaunchDaemons + \(own.count - daemons) LaunchAgents"),
+                detail: tr("Servicii de fundal (telemetrie, actualizări). Dacă nu folosești \(b.name), dezinstalează-l cu dezinstalatorul propriu, nu prin ștergere."),
                 risk: .care, paths: [], listed: own, uninstaller: Paths.isDir(unin) ? unin : nil))
         }
 
@@ -307,7 +306,7 @@ enum LeftoverScanner {
         for (id, paths) in orphans.sorted(by: { $0.key < $1.key }) {
             let where_ = Set(paths.map { (($0 as NSString).deletingLastPathComponent as NSString).lastPathComponent }).sorted()
             make("orphanc:" + id, .orphanContainer, id,
-                 "Nicio aplicație instalată nu are acest bundle ID (\(where_.joined(separator: ", "))). Euristică: verifică înainte.",
+                 tr("Nicio aplicație instalată nu are acest bundle ID (\(where_.joined(separator: ", "))). Euristică: verifică înainte."),
                  .suspect, paths)
         }
         return out
@@ -336,7 +335,7 @@ enum LeftoverActions {
         var lines: [String] {
             var l = userBoot.map { "/bin/launchctl bootout gui/\(getuid()) \(shq($0))" }
             if let c = adminCommand { l.append(osascriptLine(adminScript, [c])) }
-            l += homeTrash.map { "FileManager.trashItem(\(shq($0)))   # refuzat → Finder, ca mai jos" }
+            l += homeTrash.map { tr("FileManager.trashItem(\(shq($0)))   # refuzat → Finder, ca mai jos") }
             if !systemTrash.isEmpty { l.append(osascriptLine(finderScript, systemTrash)) }
             return l
         }
@@ -371,6 +370,20 @@ enum LeftoverActions {
         return p
     }
 
+    /// Un singur plan pentru mai multe resturi (o singură cerere de parolă de administrator).
+    static func plan(_ fs: [LeftoverFinding]) -> Plan {
+        var p = Plan()
+        for f in fs {
+            let q = plan(f)
+            p.userBoot += q.userBoot
+            p.adminBoot += q.adminBoot
+            p.homeTrash += q.homeTrash
+            p.systemTrash += q.systemTrash
+            p.skipped += q.skipped
+        }
+        return p
+    }
+
     /// Mută la Coș prin Finder: merge și pentru folderele protejate de macOS (Containers) fără Full Disk Access,
     /// iar pentru /Library Finder cere singur parola de administrator. Păstrează „Put Back”.
     static func finderTrash(_ paths: [String]) -> String? {
@@ -379,13 +392,13 @@ enum LeftoverActions {
     }
 
     static func execute(_ p: Plan) -> [String] {
-        var errors = p.skipped.map { "Sărit (protejat): " + $0 }
+        var errors = p.skipped.map { tr("Sărit (protejat): \($0)") }
         // „not loaded” e normal pentru resturi; eroarea de bootout nu oprește mutarea.
         for lp in p.userBoot { Shell.run("/bin/launchctl", ["bootout", "gui/\(getuid())", lp], timeout: 30) }
         if let cmd = p.adminCommand {
             let r = Shell.run("/usr/bin/osascript", osascriptArgs(adminScript, [cmd]), timeout: 300)
             if r.code != 0 {
-                return errors + ["Autorizare refuzată; nu am mutat nimic (serviciile ar fi rămas pornite)."]
+                return errors + [tr("Autorizare refuzată; nu am mutat nimic (serviciile ar fi rămas pornite).")]
             }
         }
         var viaFinder = p.systemTrash.filter(Paths.lexists)
@@ -405,7 +418,13 @@ final class LeftoversStore: ObservableObject {
     @Published var findings: [LeftoverFinding] = []
     @Published var scanning = false
     @Published var partial = false
+    /// Resturile bifate pentru mutare în bloc.
+    @Published var selected: Set<String> = []
     private var generation = 0
+
+    /// Se pot muta din aplicație (cele cu dezinstalator propriu doar se deschid).
+    var actionable: [LeftoverFinding] { findings.filter { $0.uninstaller == nil && !$0.paths.isEmpty } }
+    var selectedFindings: [LeftoverFinding] { actionable.filter { selected.contains($0.id) } }
 
     var sections: [(kind: LeftoverKind, items: [LeftoverFinding])] {
         LeftoverKind.allCases.compactMap { k in
@@ -425,6 +444,7 @@ final class LeftoversStore: ObservableObject {
         scanning = true
         partial = !FullDiskAccess.granted()
         findings = []
+        selected = []
         Task {
             let found = await offMain { LeftoverScanner.scan() }
             guard gen == generation else { return }
@@ -446,47 +466,45 @@ struct LeftoversView: View {
     @ObservedObject var store: LeftoversStore
     let hasFDA: Bool
     var onChange: () -> Void
-    @State private var preview: LeftoverFinding?
+    @State private var preview: [LeftoverFinding] = []
     @State private var message: (title: String, body: String)?
 
     var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 20) {
-                if store.partial || !hasFDA {
-                    Label("Scanare parțială, fără Full Disk Access: folderele protejate (Containers, Group Containers) pot lipsi din rezultate. "
-                          + "Un rezultat gol nu înseamnă că nu există resturi.", systemImage: "exclamationmark.triangle.fill")
-                        .font(.callout).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
-                }
-                Text("Nimic nu se șterge direct: vezi întâi comenzile exacte, apoi totul se mută la Coș (după „launchctl bootout” pentru serviciile de pornire).")
-                    .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                if store.scanning {
-                    HStack { ProgressView().controlSize(.small); Text("Caut resturi…").foregroundStyle(.secondary) }
-                        .frame(maxWidth: .infinity).padding(.top, 40)
-                } else if store.findings.isEmpty {
-                    Text("Nu am găsit resturi.").foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.top, 40)
-                }
-                ForEach(store.sections, id: \.kind) { s in
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(s.kind.title).font(.subheadline.weight(.semibold)).foregroundStyle(.secondary).padding(.horizontal, 4)
-                        VStack(spacing: 0) {
-                            ForEach(Array(s.items.enumerated()), id: \.element.id) { i, f in
-                                if i > 0 { Divider() }
-                                row(f)
-                            }
-                        }
-                        .background(RoundedRectangle(cornerRadius: 10).fill(Color(nsColor: .controlBackgroundColor)))
-                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.primary.opacity(0.08)))
+        VStack(spacing: 0) {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 18) {
+                    if store.partial || !hasFDA {
+                        Label("Scanare parțială, fără Full Disk Access: folderele protejate (Containers, Group Containers) pot lipsi din rezultate. Un rezultat gol nu înseamnă că nu există resturi.", systemImage: "exclamationmark.triangle.fill")
+                            .font(.system(size: 13)).foregroundStyle(Theme.careFg)
+                            .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                            .background(RoundedRectangle(cornerRadius: 10).fill(Theme.careBg))
+                    }
+                    Text("Nimic nu se șterge direct: vezi întâi comenzile exacte, apoi totul se mută la Coș (după „launchctl bootout” pentru serviciile de pornire).")
+                        .font(.system(size: 13)).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true)
+                    if store.scanning {
+                        HStack { ProgressView().controlSize(.small); Text("Caut resturi…").foregroundStyle(Theme.muted) }
+                            .frame(maxWidth: .infinity).padding(.top, 40)
+                    } else if store.findings.isEmpty {
+                        Text("Nu am găsit resturi.").foregroundStyle(Theme.muted).frame(maxWidth: .infinity).padding(.top, 40)
+                    }
+                    ForEach(store.sections, id: \.kind) { s in
+                        section(s.kind, s.items)
                     }
                 }
+                .padding(.horizontal, 28).padding(.bottom, 20)
             }
-            .padding(24)
+            Rectangle().fill(Theme.line).frame(height: 1)
+            footer
         }
-        .sheet(item: $preview) { f in
-            LeftoverPreviewSheet(finding: f) { errors in
-                preview = nil
+        .sheet(isPresented: Binding(get: { !preview.isEmpty }, set: { if !$0 { preview = [] } })) {
+            LeftoverPreviewSheet(findings: preview) { errors in
+                let done = preview
+                preview = []
                 guard let errors else { return }
-                message = errors.isEmpty ? ("Mutat la Coș", "„\(f.title)” a fost mutat la Coș.")
-                    : ("Executat parțial", errors.joined(separator: "\n"))
+                message = errors.isEmpty
+                    ? (tr("Mutat la Coș"), done.count == 1 ? tr("„\(done[0].title)” a fost mutat la Coș.")
+                        : tr("\(done.count) resturi au fost mutate la Coș."))
+                    : (tr("Executat parțial"), errors.joined(separator: "\n"))
                 onChange()
                 store.scan()
             }
@@ -496,59 +514,144 @@ struct LeftoversView: View {
         } message: { Text(message?.body ?? "") }
     }
 
+    private func section(_ kind: LeftoverKind, _ items: [LeftoverFinding]) -> some View {
+        let ids = items.filter { $0.uninstaller == nil && !$0.paths.isEmpty }.map(\.id)
+        let on = ids.filter { store.selected.contains($0) }.count
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Toggle("", isOn: Binding(
+                    get: { !ids.isEmpty && on == ids.count },
+                    set: { v in if v { store.selected.formUnion(ids) } else { store.selected.subtract(ids) } }))
+                    .toggleStyle(.checkbox).labelsHidden()
+                    .disabled(ids.isEmpty)
+                    .accessibilityLabel(Text("Selectează tot din \(kind.title)"))
+                Text(kind.title).font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.muted)
+                Spacer()
+                Text(items.count == 1 ? tr("1 rest") : tr("\(items.count) resturi")).font(.system(size: 12)).foregroundStyle(Theme.faint)
+            }
+            .padding(.horizontal, 18)
+            VStack(spacing: 0) {
+                ForEach(Array(items.enumerated()), id: \.element.id) { i, f in
+                    if i > 0 { Rectangle().fill(Theme.lineSoft).frame(height: 1) }
+                    row(f)
+                }
+            }
+            .card()
+        }
+    }
+
     @ViewBuilder
     private func row(_ f: LeftoverFinding) -> some View {
-        HStack(alignment: .top, spacing: 16) {
+        let actionable = f.uninstaller == nil && !f.paths.isEmpty
+        HStack(alignment: .top, spacing: 14) {
+            Toggle("", isOn: Binding(
+                get: { store.selected.contains(f.id) },
+                set: { v in if v { store.selected.insert(f.id) } else { store.selected.remove(f.id) } }))
+                .toggleStyle(.checkbox).labelsHidden()
+                .disabled(!actionable)
+                .accessibilityLabel(Text(f.title))
+                .padding(.top, 2)
             VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
+                HStack(spacing: 8) {
                     Text(f.title).fontWeight(.semibold)
-                    RiskBadge(risk: f.risk)
+                    RiskMark(risk: f.risk)
                 }
-                Text(f.detail).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Text(f.detail).font(.system(size: 13)).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true)
                 ForEach(f.shown.prefix(6), id: \.self) { p in
-                    Text(p).font(.caption.monospaced()).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.middle)
-                        .textSelection(.enabled)
+                    Text(p).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(Theme.faint)
+                        .lineLimit(1).truncationMode(.middle).textSelection(.enabled)
                 }
-                if f.shown.count > 6 { Text("+ încă \(f.shown.count - 6)").font(.caption).foregroundStyle(.tertiary) }
+                if f.shown.count > 6 { Text("+ încă \(f.shown.count - 6)").font(.system(size: 12)).foregroundStyle(Theme.faint) }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            VStack(alignment: .trailing, spacing: 6) {
-                if let s = f.size { Text(Fmt.bytes(s)).fontWeight(.semibold).monospacedDigit() }
+            VStack(alignment: .trailing, spacing: 8) {
+                if let s = f.size { Text(Fmt.bytes(s)).font(.system(size: 15, weight: .bold)).monospacedDigit() }
                 else { ProgressView().controlSize(.small) }
-                Button("Arată în Finder") {
-                    NSWorkspace.shared.activateFileViewerSelecting(f.shown.prefix(20).map { URL(fileURLWithPath: $0) })
-                }
-                .controlSize(.small)
-                if let u = f.uninstaller {
-                    Button("Deschide dezinstalatorul") { NSWorkspace.shared.open(URL(fileURLWithPath: u)) }
-                        .controlSize(.small).help("open \(LeftoverActions.shq(u))")
-                } else if !f.paths.isEmpty {
-                    Button("Curăță…") { preview = f }
-                        .controlSize(.small).buttonStyle(.borderedProminent).tint(.red)
-                        .help("Arată comenzile exacte, apoi mută la Coș")
+                HStack(spacing: 6) {
+                    Button("Arată în Finder") {
+                        NSWorkspace.shared.activateFileViewerSelecting(f.shown.prefix(20).map { URL(fileURLWithPath: $0) })
+                    }
+                    .buttonStyle(SecondaryButtonStyle(height: 30))
+                    if let u = f.uninstaller {
+                        Button("Deschide dezinstalatorul") { NSWorkspace.shared.open(URL(fileURLWithPath: u)) }
+                            .buttonStyle(SecondaryButtonStyle(height: 30)).help("open \(LeftoverActions.shq(u))")
+                    } else if actionable {
+                        Button("Șterge…") { preview = [f] }
+                            .buttonStyle(PrimaryButtonStyle(tint: Theme.danger, height: 30))
+                            .help(tr("Arată comenzile exacte, apoi mută la Coș"))
+                    }
                 }
             }
-            .frame(width: 190, alignment: .trailing)
+            .fixedSize()
         }
-        .padding(.horizontal, 16).padding(.vertical, 12)
+        .padding(.horizontal, 18).padding(.vertical, 14)
+    }
+
+    private var footer: some View {
+        let sel = store.selectedFindings
+        let bytes = sel.reduce(Int64(0)) { $0 + ($1.size ?? 0) }
+        let risky = sel.filter { $0.risk != .safe }.count
+        return HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(sel.isEmpty ? tr("Nimic selectat") : tr("Selectat: \(sel.count) resturi · \(Fmt.bytes(bytes))"))
+                    .fontWeight(.bold).monospacedDigit()
+                Text(risky > 0 ? tr("\(risky) dintre ele nu sunt marcate „Sigur”: verifică înainte.")
+                     : tr("Totul se mută la Coș și se poate recupera."))
+                    .font(.system(size: 12)).foregroundStyle(Theme.muted)
+            }
+            Spacer()
+            Button("Doar cele sigure") {
+                store.selected = Set(store.actionable.filter { $0.risk == .safe }.map(\.id))
+            }
+            .buttonStyle(SecondaryButtonStyle())
+            .disabled(!store.actionable.contains { $0.risk == .safe })
+            Button("Deselectează") { store.selected = [] }
+                .buttonStyle(SecondaryButtonStyle())
+                .disabled(sel.isEmpty)
+            Button(sel.isEmpty ? tr("Șterge selecția") : tr("Șterge selecția (\(sel.count))")) { preview = sel }
+                .buttonStyle(PrimaryButtonStyle(tint: Theme.danger))
+                .disabled(sel.isEmpty)
+        }
+        .padding(.horizontal, 24).frame(height: 68)
+        .background(Theme.card)
     }
 }
 
 struct LeftoverPreviewSheet: View {
-    let finding: LeftoverFinding
+    let findings: [LeftoverFinding]
     /// nil = anulat; altfel erorile execuției.
     var finish: ([String]?) -> Void
     @State private var confirmed = false
     @State private var working = false
 
     var body: some View {
-        let plan = LeftoverActions.plan(finding)
+        let plan = LeftoverActions.plan(findings)
+        let risky = findings.contains { $0.risk != .safe }
+        let bytes = findings.reduce(Int64(0)) { $0 + ($1.size ?? 0) }
         VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 8) {
-                Text(finding.title).font(.title3.weight(.semibold))
-                RiskBadge(risk: finding.risk)
+            if findings.count == 1, let f = findings.first {
+                HStack(spacing: 8) {
+                    Text(f.title).font(.title3.weight(.semibold))
+                    RiskMark(risk: f.risk)
+                }
+                Text(f.detail).font(.callout).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("Șterge \(findings.count) resturi · \(Fmt.bytes(bytes))?").font(.title3.weight(.semibold))
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 3) {
+                        ForEach(findings) { f in
+                            HStack {
+                                Text(f.title).lineLimit(1)
+                                RiskMark(risk: f.risk)
+                                Spacer()
+                                Text(Fmt.bytes(f.size)).monospacedDigit().foregroundStyle(Theme.muted)
+                            }
+                            .font(.callout)
+                        }
+                    }
+                }
+                .frame(maxHeight: 140)
             }
-            Text(finding.detail).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             GroupBox("Comenzi (previzualizare, nimic nu a rulat încă)") {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 4) {
@@ -557,27 +660,27 @@ struct LeftoverPreviewSheet: View {
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
                         ForEach(plan.skipped, id: \.self) { s in
-                            Text("Sărit (protejat): \(s)").font(.caption.monospaced()).foregroundStyle(.orange)
+                            Text("Sărit (protejat): \(s)").font(.caption.monospaced()).foregroundStyle(Theme.careFg)
                         }
                     }
                 }
-                .frame(maxHeight: 260)
+                .frame(maxHeight: 220)
             }
-            Text("Dacă FileManager.trashItem e refuzat (Containers fără Full Disk Access), elementul se mută prin Finder. "
-                 + "„with administrator privileges” și Finder pentru /Library cer parola de administrator. Totul se poate recupera din Coș până îl golești.")
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            if finding.risk != .safe {
+            Text("Dacă FileManager.trashItem e refuzat (Containers fără Full Disk Access), elementul se mută prin Finder. „with administrator privileges” și Finder pentru /Library cer parola de administrator. Totul se poate recupera din Coș până îl golești.")
+                .font(.caption).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true)
+            if risky {
                 Toggle("Am verificat: nu folosesc ce se mută", isOn: $confirmed).toggleStyle(.checkbox)
             }
             HStack {
                 Spacer()
                 Button("Anulează") { finish(nil) }.keyboardShortcut(.cancelAction)
-                Button(working ? "Se mută…" : "Mută la Coș") { run(plan) }
-                    .buttonStyle(.borderedProminent).tint(.red)
-                    .disabled(working || plan.lines.isEmpty || (finding.risk != .safe && !confirmed))
+                    .buttonStyle(SecondaryButtonStyle(height: 34))
+                Button(working ? tr("Se mută…") : tr("Mută la Coș")) { run(plan) }
+                    .buttonStyle(PrimaryButtonStyle(tint: Theme.danger, height: 34))
+                    .disabled(working || plan.lines.isEmpty || (risky && !confirmed))
             }
         }
-        .padding(20)
+        .padding(22)
         .frame(width: 680)
     }
 

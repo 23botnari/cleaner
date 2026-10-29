@@ -5,9 +5,9 @@ enum Risk: Sendable {
     case safe, care, suspect
     var label: String {
         switch self {
-        case .safe: "Sigur"
-        case .care: "Atenție"
-        case .suspect: "Suspect"
+        case .safe: tr("Sigur")
+        case .care: tr("Atenție")
+        case .suspect: tr("Suspect")
         }
     }
 }
@@ -63,65 +63,62 @@ enum Targets {
 
         var g = "Aplicații de chat"
         L.append(CleanTarget(
-            id: "whatsapp", group: g, name: "WhatsApp: date locale (media + chat-uri)",
-            desc: "Toate pozele, video-urile și fișierele primite pe WhatsApp, salvate pe Mac. "
-                + "Înainte: în WhatsApp → Settings → Account → Log out, apoi închide aplicația. "
-                + "La reconectare, chat-urile recente revin de pe telefon; media veche rămâne doar pe telefon.",
+            id: "whatsapp", group: g, name: tr("WhatsApp: date locale (media + chat-uri)"),
+            desc: tr("Toate pozele, video-urile și fișierele primite pe WhatsApp, salvate pe Mac. Înainte: în WhatsApp → Settings → Account → Log out, apoi închide aplicația. La reconectare, chat-urile recente revin de pe telefon; media veche rămâne doar pe telefon."),
             risk: .care, procs: ["WhatsApp.app/Contents/MacOS"], appName: "WhatsApp",
             resolve: { Paths.existing([Paths.hp("Library", "Group Containers", "group.net.whatsapp.WhatsApp.shared")]) }))
         L.append(CleanTarget(
-            id: "telegram", group: g, name: "Telegram: media în cache",
-            desc: "Fișiere descărcate din chat-uri. Rămân în cloud-ul Telegram și se descarcă din nou la nevoie.",
+            id: "telegram", group: g, name: tr("Telegram: media în cache"),
+            desc: tr("Fișiere descărcate din chat-uri. Rămân în cloud-ul Telegram și se descarcă din nou la nevoie."),
             procs: ["Telegram.app/Contents/MacOS"], appName: "Telegram",
             resolve: { Paths.existing([Paths.join(AS, "Telegram Desktop", "tdata", "user_data")]) }))
         L.append(CleanTarget(
-            id: "discord", group: g, name: "Discord: cache",
-            desc: "Imagini și fișiere temporare. Discord le refolosește doar ca să încarce mai repede.",
+            id: "discord", group: g, name: tr("Discord: cache"),
+            desc: tr("Imagini și fișiere temporare. Discord le refolosește doar ca să încarce mai repede."),
             procs: ["Discord.app/Contents/MacOS"], appName: "Discord",
             resolve: { Paths.existing(["Cache", "Code Cache", "GPUCache"].map { Paths.join(AS, "discord", $0) }) }))
 
         g = "Dezvoltare"
         L.append(CleanTarget(
-            id: "npm", group: g, name: "npm: cache",
-            desc: "Pachete descărcate anterior. Se redescarcă automat la următorul npm install.",
+            id: "npm", group: g, name: tr("npm: cache"),
+            desc: tr("Pachete descărcate anterior. Se redescarcă automat la următorul npm install."),
             resolve: { Paths.existing([Paths.hp(".npm", "_cacache"), Paths.hp(".npm", "_npx"), Paths.hp(".npm", "_logs")]) }))
         L.append(CleanTarget(
-            id: "gradle", group: g, name: "Gradle: cache și distribuții",
-            desc: "Dependențe Android și versiuni Gradle descărcate. Primul build după curățare va dura mai mult.",
-            procs: ["GradleDaemon"], appName: "Android Studio / Gradle (sau rulează ./gradlew --stop)",
+            id: "gradle", group: g, name: tr("Gradle: cache și distribuții"),
+            desc: tr("Dependențe Android și versiuni Gradle descărcate. Primul build după curățare va dura mai mult."),
+            procs: ["GradleDaemon"], appName: tr("Android Studio / Gradle (sau rulează ./gradlew --stop)"),
             resolve: { Paths.existing([Paths.hp(".gradle", "caches"), Paths.hp(".gradle", "wrapper", "dists"), Paths.hp(".gradle", "daemon")]) }))
         L.append(CleanTarget(
-            id: "pnpm", group: g, name: "pnpm: store",
-            desc: "Depozitul global de pachete pnpm. Se reface la următorul pnpm install.",
+            id: "pnpm", group: g, name: tr("pnpm: store"),
+            desc: tr("Depozitul global de pachete pnpm. Se reface la următorul pnpm install."),
             resolve: { Paths.existing([Paths.hp("Library", "pnpm", "store")]) }))
         L.append(CleanTarget(
-            id: "deriveddata", group: g, name: "Xcode: DerivedData",
-            desc: "Fișiere de build. Xcode le regenerează la următorul build.",
+            id: "deriveddata", group: g, name: tr("Xcode: DerivedData"),
+            desc: tr("Fișiere de build. Xcode le regenerează la următorul build."),
             procs: ["Xcode.app/Contents/MacOS/Xcode"], appName: "Xcode",
             resolve: { Paths.children(Paths.join(dev, "Xcode", "DerivedData")) }))
         L.append(CleanTarget(
-            id: "devicesupport", group: g, name: "Xcode: suport pentru dispozitive",
-            desc: "Simboluri copiate de pe iPhone-urile conectate vreodată. Se recopiază când conectezi din nou un dispozitiv.",
+            id: "devicesupport", group: g, name: tr("Xcode: suport pentru dispozitive"),
+            desc: tr("Simboluri copiate de pe iPhone-urile conectate vreodată. Se recopiază când conectezi din nou un dispozitiv."),
             procs: ["Xcode.app/Contents/MacOS/Xcode"], appName: "Xcode",
             resolve: { Paths.children(Paths.join(dev, "Xcode", "iOS DeviceSupport"))
                 + Paths.children(Paths.join(dev, "Xcode", "watchOS DeviceSupport")) }))
         L.append(CleanTarget(
-            id: "archives", group: g, name: "Xcode: arhive",
-            desc: "Build-uri trimise în App Store / TestFlight. Păstrează-le dacă ai nevoie de rapoarte de crash simbolizate pentru versiuni publicate.",
+            id: "archives", group: g, name: tr("Xcode: arhive"),
+            desc: tr("Build-uri trimise în App Store / TestFlight. Păstrează-le dacă ai nevoie de rapoarte de crash simbolizate pentru versiuni publicate."),
             risk: .care, procs: ["Xcode.app/Contents/MacOS/Xcode"], appName: "Xcode",
             resolve: { Paths.children(Paths.join(dev, "Xcode", "Archives")) }))
 
         g = "Simulatoare iOS"
         let cs = Paths.join(dev, "CoreSimulator")
         L.append(CleanTarget(
-            id: "simcaches", group: g, name: "Simulatoare: cache",
-            desc: "Fișiere temporare ale simulatoarelor. Se refac automat.",
+            id: "simcaches", group: g, name: tr("Simulatoare: cache"),
+            desc: tr("Fișiere temporare ale simulatoarelor. Se refac automat."),
             resolve: { Paths.children(Paths.join(cs, "Caches")) }))
         if FileManager.default.isExecutableFile(atPath: xcrun) && Paths.isDir(Paths.join(cs, "Devices")) {
             L.append(CleanTarget(
-                id: "simerase", group: g, name: "Simulatoare: resetează toate",
-                desc: "Șterge aplicațiile și datele din toate simulatoarele și elimină simulatoarele pentru versiuni iOS care nu mai există. "
-                    + "Simulatoarele rămân în listă, ca noi.",
+                id: "simerase", group: g, name: tr("Simulatoare: resetează toate"),
+                desc: tr("Șterge aplicațiile și datele din toate simulatoarele și elimină simulatoarele pentru versiuni iOS care nu mai există. Simulatoarele rămân în listă, ca noi."),
                 risk: .care, procs: ["Simulator.app/Contents/MacOS"], appName: "Simulator",
                 cmds: [["/bin/sh", "-c", "/usr/bin/xcrun simctl shutdown all >/dev/null 2>&1; true"],
                        [xcrun, "simctl", "delete", "unavailable"],
@@ -131,32 +128,31 @@ enum Targets {
 
         g = "Sistem și altele"
         L.append(CleanTarget(
-            id: "wallpapers", group: g, name: "Wallpapere Aerial descărcate",
-            desc: "Video-urile pentru wallpapere și screensaver-e animate. Cel folosit acum se descarcă din nou automat.",
+            id: "wallpapers", group: g, name: tr("Wallpapere Aerial descărcate"),
+            desc: tr("Video-urile pentru wallpapere și screensaver-e animate. Cel folosit acum se descarcă din nou automat."),
             resolve: { filesMatching(Paths.join(AS, "com.apple.wallpaper"), exts: ["mov", "mp4"]) }))
         L.append(CleanTarget(
-            id: "dockerinstall", group: g, name: "Docker: kit de instalare rămas",
-            desc: "Fișiere rămase după instalarea Docker Desktop. Docker funcționează și fără ele.",
+            id: "dockerinstall", group: g, name: tr("Docker: kit de instalare rămas"),
+            desc: tr("Fișiere rămase după instalarea Docker Desktop. Docker funcționează și fără ele."),
             resolve: { Paths.existing([Paths.join(AS, "com.docker.install")]) }))
         L.append(CleanTarget(
-            id: "vscode", group: g, name: "VS Code: cache",
-            desc: "Cache-uri și log-uri. Setările, extensiile și proiectele nu sunt atinse.",
+            id: "vscode", group: g, name: tr("VS Code: cache"),
+            desc: tr("Cache-uri și log-uri. Setările, extensiile și proiectele nu sunt atinse."),
             procs: ["Visual Studio Code.app/Contents/MacOS"], appName: "VS Code",
             resolve: { Paths.existing(["Cache", "CachedData", "CachedExtensionVSIXs", "Code Cache", "GPUCache", "logs"]
                 .map { Paths.join(AS, "Code", $0) }) }))
         L.append(CleanTarget(
-            id: "usercaches", group: g, name: "Cache-uri aplicații (~/Library/Caches)",
-            desc: "Cache-urile tuturor aplicațiilor (browsere, Homebrew, CocoaPods etc.). Se refac singure; unele aplicații pot porni mai încet o dată. "
-                + "Închide cât mai multe aplicații înainte și repornește Mac-ul după.",
+            id: "usercaches", group: g, name: tr("Cache-uri aplicații (~/Library/Caches)"),
+            desc: tr("Cache-urile tuturor aplicațiilor (browsere, Homebrew, CocoaPods etc.). Se refac singure; unele aplicații pot porni mai încet o dată. Închide cât mai multe aplicații înainte și repornește Mac-ul după."),
             risk: .care,
             resolve: { Paths.children(Paths.hp("Library", "Caches")) }))
         L.append(CleanTarget(
-            id: "logs", group: g, name: "Log-uri",
-            desc: "Jurnale de erori și diagnostic ale aplicațiilor.",
+            id: "logs", group: g, name: tr("Log-uri"),
+            desc: tr("Jurnale de erori și diagnostic ale aplicațiilor."),
             resolve: { Paths.children(Paths.hp("Library", "Logs")) }))
         L.append(CleanTarget(
-            id: "trash", group: g, name: "Coșul (Bin)",
-            desc: "Golește Coșul definitiv. Ce e acolo nu mai poate fi recuperat.",
+            id: "trash", group: g, name: tr("Coșul (Bin)"),
+            desc: tr("Golește Coșul definitiv. Ce e acolo nu mai poate fi recuperat."),
             risk: .care,
             resolve: { Paths.children(Paths.hp(".Trash")) }))
         return L
@@ -168,29 +164,27 @@ enum Targets {
         let cl = Paths.join(AS, "Claude")
         let desktop = ["Claude.app/Contents/MacOS/Claude"]
         L.append(CleanTarget(
-            id: "claude-cache", group: g, name: "Claude Desktop: cache",
-            desc: "Cache-uri ale interfeței (imagini, cod compilat, GPU). Conversațiile și setările nu sunt atinse; se refac automat.",
-            procs: desktop, appName: "aplicația Claude (Claude → Quit)",
+            id: "claude-cache", group: g, name: tr("Claude Desktop: cache"),
+            desc: tr("Cache-uri ale interfeței (imagini, cod compilat, GPU). Conversațiile și setările nu sunt atinse; se refac automat."),
+            procs: desktop, appName: tr("aplicația Claude (Claude → Quit)"),
             resolve: { Paths.existing(["Cache", "Code Cache", "GPUCache", "DawnWebGPUCache", "DawnGraphiteCache", "blob_storage"]
                 .map { Paths.join(cl, $0) } + [Paths.hp("Library", "Caches", "com.anthropic.claudefordesktop.ShipIt")]) }))
         L.append(CleanTarget(
-            id: "claude-vm", group: g, name: "Claude Desktop: mașina virtuală",
-            desc: "Imaginea Linux folosită de Claude pentru lucru în sandbox (Cowork / agent). "
-                + "Se descarcă din nou automat prima dată când e nevoie de ea (câțiva GB).",
-            risk: .care, procs: desktop, appName: "aplicația Claude (Claude → Quit)",
+            id: "claude-vm", group: g, name: tr("Claude Desktop: mașina virtuală"),
+            desc: tr("Imaginea Linux folosită de Claude pentru lucru în sandbox (Cowork / agent). Se descarcă din nou automat prima dată când e nevoie de ea (câțiva GB)."),
+            risk: .care, procs: desktop, appName: tr("aplicația Claude (Claude → Quit)"),
             resolve: { Paths.existing([Paths.join(cl, "vm_bundles")]) }))
         let cc = Paths.hp(".claude")
         L.append(CleanTarget(
-            id: "claudecode-temp", group: g, name: "Claude Code: fișiere temporare",
-            desc: "Snapshot-uri de shell, cache, istoric de fișiere pentru undo, log-uri de debug și cache-ul CLI. "
-                + "Setările, skill-urile, plugin-urile și conversațiile rămân.",
-            procs: ["=claude"], appName: "toate sesiunile Claude Code (inclusiv cele din Claude Desktop)",
+            id: "claudecode-temp", group: g, name: tr("Claude Code: fișiere temporare"),
+            desc: tr("Snapshot-uri de shell, cache, istoric de fișiere pentru undo, log-uri de debug și cache-ul CLI. Setările, skill-urile, plugin-urile și conversațiile rămân."),
+            procs: ["=claude"], appName: tr("toate sesiunile Claude Code (inclusiv cele din Claude Desktop)"),
             resolve: { Paths.existing(["shell-snapshots", "paste-cache", "cache", "debug", "telemetry", "file-history", "statsig"]
                 .map { Paths.join(cc, $0) } + [Paths.hp("Library", "Caches", "claude-cli-nodejs")]) }))
         L.append(CleanTarget(
-            id: "claudecode-old", group: g, name: "Claude Code: conversații mai vechi de 30 de zile",
-            desc: "Transcrieri ale sesiunilor vechi din ~/.claude/projects. După ștergere nu mai poți relua (--resume) acele sesiuni.",
-            risk: .care, procs: ["=claude"], appName: "toate sesiunile Claude Code (inclusiv cele din Claude Desktop)",
+            id: "claudecode-old", group: g, name: tr("Claude Code: conversații mai vechi de 30 de zile"),
+            desc: tr("Transcrieri ale sesiunilor vechi din ~/.claude/projects. După ștergere nu mai poți relua (--resume) acele sesiuni."),
+            risk: .care, procs: ["=claude"], appName: tr("toate sesiunile Claude Code (inclusiv cele din Claude Desktop)"),
             resolve: {
                 let cutoff = Date().addingTimeInterval(-30 * 24 * 3600)
                 return Paths.children(Paths.join(cc, "projects")).flatMap { proj in
@@ -229,9 +223,8 @@ enum Targets {
             total += parseDockerSize(rec)
         }
         return [CleanTarget(
-            id: "docker-prune", group: "Dezvoltare", name: "Docker: imagini, containere oprite și cache de build nefolosite",
-            desc: "Rulează „docker system prune -a”. Volumele (bazele de date din containere) NU sunt atinse. "
-                + "Imaginile se descarcă din nou la nevoie. Docker.raw se micșorează după repornirea Docker.",
+            id: "docker-prune", group: "Dezvoltare", name: tr("Docker: imagini, containere oprite și cache de build nefolosite"),
+            desc: tr("Rulează „docker system prune -a”. Volumele (bazele de date din containere) NU sunt atinse. Imaginile se descarcă din nou la nevoie. Docker.raw se micșorează după repornirea Docker."),
             risk: .care,
             cmds: [[docker, "system", "prune", "-af"]],
             fixedSize: total)]
@@ -248,15 +241,15 @@ enum Targets {
             let snaps = Paths.join(avd, "snapshots")
             if Paths.isDir(snaps) {
                 L.append(CleanTarget(
-                    id: "avdsnap:" + avd, group: g, name: "Emulator \(name): snapshot-uri",
-                    desc: "Stări salvate pentru Quick Boot. Emulatorul pornește la rece prima dată; aplicațiile și datele din el rămân.",
-                    procs: ["qemu-system"], appName: "emulatorul Android",
+                    id: "avdsnap:" + avd, group: g, name: tr("Emulator \(name): snapshot-uri"),
+                    desc: tr("Stări salvate pentru Quick Boot. Emulatorul pornește la rece prima dată; aplicațiile și datele din el rămân."),
+                    procs: ["qemu-system"], appName: tr("emulatorul Android"),
                     resolve: { Paths.children(snaps) }))
             }
             L.append(CleanTarget(
-                id: "avd:" + avd, group: g, name: "Emulator \(name): șterge complet",
-                desc: "Șterge emulatorul cu tot cu datele lui. Îl poți crea din nou din Android Studio → Device Manager.",
-                risk: .care, procs: ["qemu-system"], appName: "emulatorul Android", overlap: true,
+                id: "avd:" + avd, group: g, name: tr("Emulator \(name): șterge complet"),
+                desc: tr("Șterge emulatorul cu tot cu datele lui. Îl poți crea din nou din Android Studio → Device Manager."),
+                risk: .care, procs: ["qemu-system"], appName: tr("emulatorul Android"), overlap: true,
                 resolve: { Paths.existing([avd, base + ".ini"]) }))
         }
         let env = ProcessInfo.processInfo.environment["ANDROID_HOME"]
@@ -270,8 +263,8 @@ enum Targets {
         }
         for img in imgs.sorted() {
             L.append(CleanTarget(
-                id: "sysimg:" + img, group: g, name: "Imagine de sistem \(Paths.relative(img, to: imgBase))",
-                desc: "Necesară emulatoarelor pe versiunea asta de Android. Șterge-o doar dacă niciun emulator nu o folosește; se reinstalează din SDK Manager.",
+                id: "sysimg:" + img, group: g, name: tr("Imagine de sistem \(Paths.relative(img, to: imgBase))"),
+                desc: tr("Necesară emulatoarelor pe versiunea asta de Android. Șterge-o doar dacă niciun emulator nu o folosește; se reinstalează din SDK Manager."),
                 risk: .care,
                 resolve: { Paths.existing([img]) }))
         }
@@ -289,8 +282,8 @@ enum Targets {
         let dirs = byRuntime.values.flatMap { $0 }.compactMap { $0["udid"] as? String }.map { Paths.join(devices, $0) }
         guard !dirs.isEmpty else { return [] }
         return [CleanTarget(
-            id: "simunavailable", group: "Simulatoare iOS", name: "Simulatoare indisponibile (\(dirs.count))",
-            desc: "Simulatoare pentru versiuni iOS care nu mai sunt instalate; nu mai pot porni. Rulează „xcrun simctl delete unavailable”.",
+            id: "simunavailable", group: "Simulatoare iOS", name: tr("Simulatoare indisponibile (\(dirs.count))"),
+            desc: tr("Simulatoare pentru versiuni iOS care nu mai sunt instalate; nu mai pot porni. Rulează „xcrun simctl delete unavailable”."),
             procs: ["Simulator.app/Contents/MacOS"], appName: "Simulator",
             cmds: [[xcrun, "simctl", "delete", "unavailable"]],
             sizePaths: dirs)]
@@ -314,9 +307,8 @@ enum Targets {
             let version = rt["version"] as? String ?? "?"
             let size = (rt["sizeBytes"] as? NSNumber)?.int64Value ?? 0
             L.append(CleanTarget(
-                id: "runtime:" + ident, group: "Simulatoare iOS", name: "Runtime \(label) \(version)",
-                desc: "Sistemul pentru simulatoarele pe această versiune. Păstrează doar ce folosești la testare; "
-                    + "se descarcă din nou din Xcode → Settings → Components.",
+                id: "runtime:" + ident, group: "Simulatoare iOS", name: tr("Runtime \(label) \(version)"),
+                desc: tr("Sistemul pentru simulatoarele pe această versiune. Păstrează doar ce folosești la testare; se descarcă din nou din Xcode → Settings → Components."),
                 risk: .care, procs: ["Simulator.app/Contents/MacOS"], appName: "Simulator",
                 cmds: [[xcrun, "simctl", "runtime", "delete", ident]],
                 fixedSize: size))
@@ -329,21 +321,21 @@ enum Targets {
 
     /// Foldere de build regenerabile, recunoscute doar lângă fișierul care le confirmă proiectul.
     static let projectArtifacts: [(dir: String, markers: [String], what: String, regen: String)] = [
-        (".next", ["package.json"], "build Next.js", "Se regenerează la următorul next dev / build."),
-        (".nuxt", ["package.json"], "build Nuxt", "Se regenerează la următorul nuxt dev / build."),
-        (".svelte-kit", ["package.json"], "build SvelteKit", "Se regenerează la următorul vite dev / build."),
-        (".turbo", ["package.json", "turbo.json"], "cache Turborepo", "Se reface la următorul turbo run."),
-        (".parcel-cache", ["package.json"], "cache Parcel", "Se reface la următorul build."),
-        (".angular", ["angular.json"], "cache Angular", "Se reface la următorul ng serve / build."),
-        ("target", ["Cargo.toml"], "build Rust", "Se recompilează la următorul cargo build."),
-        ("target", ["pom.xml"], "build Maven", "Se recompilează la următorul mvn package."),
-        (".build", ["Package.swift"], "build Swift", "Se recompilează la următorul swift build."),
-        ("Pods", ["Podfile"], "dependențe CocoaPods", "Se reinstalează cu pod install."),
-        (".dart_tool", ["pubspec.yaml"], "cache Dart / Flutter", "Se reface la următorul flutter pub get."),
-        ("build", ["pubspec.yaml"], "build Flutter", "Se regenerează la următorul flutter build."),
-        ("build", ["build.gradle", "build.gradle.kts"], "build Gradle", "Se regenerează la următorul build Gradle."),
-        (".gradle", ["settings.gradle", "settings.gradle.kts", "build.gradle", "build.gradle.kts"], "cache Gradle al proiectului",
-         "Se reface la următorul build Gradle."),
+        (".next", ["package.json"], tr("build Next.js"), tr("Se regenerează la următorul next dev / build.")),
+        (".nuxt", ["package.json"], tr("build Nuxt"), tr("Se regenerează la următorul nuxt dev / build.")),
+        (".svelte-kit", ["package.json"], tr("build SvelteKit"), tr("Se regenerează la următorul vite dev / build.")),
+        (".turbo", ["package.json", "turbo.json"], tr("cache Turborepo"), tr("Se reface la următorul turbo run.")),
+        (".parcel-cache", ["package.json"], tr("cache Parcel"), tr("Se reface la următorul build.")),
+        (".angular", ["angular.json"], tr("cache Angular"), tr("Se reface la următorul ng serve / build.")),
+        ("target", ["Cargo.toml"], tr("build Rust"), tr("Se recompilează la următorul cargo build.")),
+        ("target", ["pom.xml"], tr("build Maven"), tr("Se recompilează la următorul mvn package.")),
+        (".build", ["Package.swift"], tr("build Swift"), tr("Se recompilează la următorul swift build.")),
+        ("Pods", ["Podfile"], tr("dependențe CocoaPods"), tr("Se reinstalează cu pod install.")),
+        (".dart_tool", ["pubspec.yaml"], tr("cache Dart / Flutter"), tr("Se reface la următorul flutter pub get.")),
+        ("build", ["pubspec.yaml"], tr("build Flutter"), tr("Se regenerează la următorul flutter build.")),
+        ("build", ["build.gradle", "build.gradle.kts"], tr("build Gradle"), tr("Se regenerează la următorul build Gradle.")),
+        (".gradle", ["settings.gradle", "settings.gradle.kts", "build.gradle", "build.gradle.kts"], tr("cache Gradle al proiectului"),
+         tr("Se reface la următorul build Gradle.")),
     ]
 
     /// Ultima activitate în proiect: fișierele de pe primul nivel, folderul însuși și indexul git (până la 4 niveluri mai sus).
@@ -389,8 +381,8 @@ enum Targets {
             return CleanTarget(
                 id: id + full, group: group,
                 name: group == "node_modules din proiecte" ? rel : "\(rel) — \(what)",
-                desc: "Ultima activitate în proiect: \(df.string(from: last)) (acum \(days) zile). \(regen)"
-                    + (active ? " Lucrezi recent la el, așa că nu e bifat implicit." : ""),
+                desc: tr("Ultima activitate în proiect: \(df.string(from: last)) (acum \(days) zile). \(regen)")
+                    + (active ? tr(" Lucrezi recent la el, așa că nu e bifat implicit.") : ""),
                 risk: active ? .care : .safe,
                 resolve: { Paths.existing([full]) })
         }
@@ -405,7 +397,7 @@ enum Targets {
                 if (try? URL(fileURLWithPath: full).resourceValues(forKeys: [.isPackageKey]))?.isPackage == true { continue }
                 if d == "node_modules" {
                     L.append(target(id: "nm:", group: "node_modules din proiecte", full: full, dir: dir, what: "node_modules",
-                                    regen: "Se reinstalează cu npm / yarn / pnpm install."))
+                                    regen: tr("Se reinstalează cu npm / yarn / pnpm install.")))
                 } else if dir != home,
                           let a = projectArtifacts.first(where: { $0.dir == d && $0.markers.contains { Paths.lexists(Paths.join(dir, $0)) } }) {
                     L.append(target(id: "art:", group: "Build-uri din proiecte", full: full, dir: dir, what: a.what, regen: a.regen))

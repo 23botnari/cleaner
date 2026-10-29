@@ -17,6 +17,8 @@ final class RecommendationsStore: ObservableObject {
     @Published var scanningNodeModules = false
     @Published var busy: Set<String> = []
     @Published var done: Set<String> = []
+    /// Bifele din Recomandări; implicit tot ce e sigur.
+    @Published var selected: Set<String> = []
 
     @Published var diskTotal: Int64 = 0
     @Published var diskFree: Int64 = 0
@@ -51,6 +53,15 @@ final class RecommendationsStore: ObservableObject {
         .map(\.element)
     }
 
+    /// Ținte sigure, cu mărime, necurățate încă (implicit bifate; „Curăță doar ce e sigur”).
+    var safeIDs: [String] {
+        targets.filter { $0.risk == .safe && !$0.overlap && (sizes[$0.id] ?? 0) > 0 && !done.contains($0.id) }.map(\.id)
+    }
+
+    var selectedTargets: [CleanTarget] {
+        targets.filter { selected.contains($0.id) && (sizes[$0.id] ?? 0) > 0 && !done.contains($0.id) }
+    }
+
     var maxSize: Int64 { max(1, sizes.values.max() ?? 1) }
 
     func refreshDisk() {
@@ -74,6 +85,7 @@ final class RecommendationsStore: ObservableObject {
         targets = []
         sizes = [:]
         done = []
+        selected = []
         refreshDisk()
         Task {
             let found = await offMain {
@@ -107,6 +119,7 @@ final class RecommendationsStore: ObservableObject {
             for await (id, size) in group {
                 guard gen == generation else { group.cancelAll(); return }
                 sizes[id] = size
+                if size > 0, let t = targets.first(where: { $0.id == id }), t.risk == .safe, !t.overlap { selected.insert(id) }
                 _ = next()
             }
         }
@@ -117,7 +130,7 @@ final class RecommendationsStore: ObservableObject {
         let procs = t.procs
         guard !procs.isEmpty else { return nil }
         let running = await offMain { Procs.running(procs) }
-        return running ? "Închide \(t.appName ?? "aplicația") înainte de curățare." : nil
+        return running ? tr("Închide \(t.appName ?? tr("aplicația")) înainte de curățare.") : nil
     }
 
     func clean(_ t: CleanTarget) async -> Result<CleanResult, CleanError> {
@@ -129,7 +142,10 @@ final class RecommendationsStore: ObservableObject {
         }
         if case .success(let r) = res {
             sizes[t.id] = r.size
-            if r.errors.isEmpty || r.size == 0 { done.insert(t.id) }
+            if r.errors.isEmpty || r.size == 0 {
+                done.insert(t.id)
+                selected.remove(t.id)
+            }
             if t.fixedSize != nil, r.errors.isEmpty, let i = targets.firstIndex(where: { $0.id == t.id }) {
                 targets[i].fixedSize = 0
             }
@@ -146,14 +162,14 @@ struct CleanError: Error {
 enum Cleaner {
     static func clean(_ t: CleanTarget, knownBefore: Int64?) -> Result<CleanResult, CleanError> {
         if Procs.running(t.procs) {
-            return .failure(CleanError(message: "Închide \(t.appName ?? "aplicația") înainte de curățare."))
+            return .failure(CleanError(message: tr("Închide \(t.appName ?? tr("aplicația")) înainte de curățare.")))
         }
         let before = knownBefore ?? t.size()
         var errors: [String] = []
         let fm = FileManager.default
         for p in t.resolve() {
             guard Paths.deletable(p) else {
-                errors.append("Sărit (protejat): " + p)
+                errors.append(tr("Sărit (protejat): \(p)"))
                 continue
             }
             do {
@@ -177,7 +193,7 @@ enum Cleaner {
             let r = Shell.run(exe, Array(c.dropFirst()))
             if r.code != 0 {
                 let msg = (r.err.isEmpty ? r.out : r.err).trimmingCharacters(in: .whitespacesAndNewlines)
-                errors.append(msg.isEmpty ? "Comanda a eșuat: " + c.joined(separator: " ") : String(msg.prefix(300)))
+                errors.append(msg.isEmpty ? tr("Comanda a eșuat: \(c.joined(separator: " "))") : String(msg.prefix(300)))
             }
         }
         var after: Int64

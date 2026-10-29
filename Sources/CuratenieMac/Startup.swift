@@ -17,8 +17,8 @@ struct StartupItem: Identifiable, Sendable {
     var needsAdmin: Bool { !isUser }
 
     var scope: String {
-        if path.hasPrefix("/Library/LaunchDaemons/") { return "Daemon sistem" }
-        return isUser ? "Agent utilizator" : "Agent toți utilizatorii"
+        if path.hasPrefix("/Library/LaunchDaemons/") { return tr("Daemon sistem") }
+        return isUser ? tr("Agent utilizator") : tr("Agent toți utilizatorii")
     }
 
     var programMissing: Bool { program.map(LeftoverScanner.missing) ?? true }
@@ -69,7 +69,7 @@ enum StartupScanner {
             : Shell.run("/bin/sh", ["-c", cmd], timeout: 60)
         guard r.code != 0 else { return nil }
         let msg = (r.err.isEmpty ? r.out : r.err).trimmingCharacters(in: .whitespacesAndNewlines)
-        return msg.isEmpty ? "Comanda a eșuat." : String(msg.prefix(300))
+        return msg.isEmpty ? tr("Comanda a eșuat.") : String(msg.prefix(300))
     }
 }
 
@@ -119,30 +119,37 @@ struct StartupView: View {
         VStack(spacing: 0) {
             HStack {
                 Text("Servicii pornite automat (LaunchAgents / LaunchDaemons). Dezactivarea e persistentă și reversibilă.")
-                    .foregroundStyle(.secondary).font(.callout)
+                    .foregroundStyle(Theme.muted).font(.system(size: 13))
                 Spacer()
                 Button("Login Items în Setări…") {
                     if let url = URL(string: "x-apple.systempreferences:com.apple.LoginItems-Settings.extension") {
                         NSWorkspace.shared.open(url)
                     }
                 }
-                .controlSize(.small)
+                .buttonStyle(SecondaryButtonStyle(height: 30))
             }
-            .padding(.horizontal, 24).padding(.vertical, 10)
-            Divider()
+            .padding(.horizontal, 28).padding(.bottom, 12)
             if store.loading && store.items.isEmpty {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                List(store.items) { row($0) }
-                    .listStyle(.inset(alternatesRowBackgrounds: true))
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(Array(store.items.enumerated()), id: \.element.id) { i, it in
+                            if i > 0 { Rectangle().fill(Theme.lineSoft).frame(height: 1) }
+                            row(it)
+                        }
+                    }
+                    .card()
+                    .padding(.horizontal, 28).padding(.bottom, 20)
+                }
             }
         }
         .alert(item: Binding(get: { confirm.map(IdentifiedStartup.init) }, set: { confirm = $0?.item })) { w in
             let it = w.item
             let enable = it.disabled
             return Alert(
-                title: Text("\(enable ? "Activează" : "Dezactivează") „\(it.label)”?"),
-                message: Text((it.needsAdmin ? "Cere parola de administrator.\n\n" : "")
+                title: Text(enable ? tr("Activează „\(it.label)”?") : tr("Dezactivează „\(it.label)”?")),
+                message: Text((it.needsAdmin ? tr("Cere parola de administrator.\n\n") : "")
                     + StartupScanner.commands(it, enable: enable).joined(separator: "\n")),
                 primaryButton: enable ? .default(Text("Activează")) { run(it) } : .destructive(Text("Dezactivează")) { run(it) },
                 secondaryButton: .cancel(Text("Anulează")))
@@ -154,40 +161,41 @@ struct StartupView: View {
 
     @ViewBuilder
     private func row(_ it: StartupItem) -> some View {
-        HStack(spacing: 12) {
-            Circle().fill(it.disabled ? Color.gray : it.loaded ? Color.green : Color.orange.opacity(0.7))
+        HStack(spacing: 14) {
+            Circle().fill(it.disabled ? Theme.used : it.loaded ? Theme.reclaim : Theme.care)
                 .frame(width: 8, height: 8)
-                .help(it.disabled ? "Dezactivat" : it.loaded ? "Rulează / încărcat" : "Activ, neîncărcat acum")
+                .help(it.disabled ? tr("Dezactivat") : it.loaded ? tr("Rulează / încărcat") : tr("Activ, neîncărcat acum"))
             VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text(it.label).fontWeight(.semibold)
-                    Text(it.scope).font(.caption2.weight(.semibold))
-                        .padding(.horizontal, 6).padding(.vertical, 1)
-                        .background(RoundedRectangle(cornerRadius: 4).fill(Color.primary.opacity(0.08)))
-                    if it.programMissing { Text("program lipsă").font(.caption2.weight(.semibold)).foregroundStyle(.orange) }
+                HStack(spacing: 8) {
+                    Text(it.label).fontWeight(.semibold).lineLimit(1)
+                    Pill(text: it.scope, bg: Theme.lineSoft, fg: Theme.muted)
+                    if it.programMissing { Pill(text: tr("program lipsă"), bg: Theme.careBg, fg: Theme.careFg) }
                 }
-                Text(it.program ?? "fără program").font(.caption.monospaced()).foregroundStyle(.secondary)
+                Text(it.program ?? tr("fără program"))
+                    .font(.system(size: 11.5, design: .monospaced)).foregroundStyle(Theme.muted)
                     .lineLimit(1).truncationMode(.middle).textSelection(.enabled)
             }
-            Spacer(minLength: 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
             Button("Arată în Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: it.path)]) }
-                .controlSize(.small)
+                .buttonStyle(SecondaryButtonStyle(height: 30))
             Group {
                 if store.busy == it.id {
                     ProgressView().controlSize(.small)
+                } else if it.disabled {
+                    Button("Activează") { confirm = it }.buttonStyle(PrimaryButtonStyle(height: 30))
                 } else {
-                    Button(it.disabled ? "Activează" : "Dezactivează") { confirm = it }.controlSize(.small)
+                    Button("Dezactivează") { confirm = it }.buttonStyle(SecondaryButtonStyle(height: 30))
                 }
             }
-            .frame(width: 100, alignment: .trailing)
+            .frame(width: 110, alignment: .trailing)
         }
-        .padding(.vertical, 4)
-        .opacity(it.disabled ? 0.6 : 1)
+        .padding(.horizontal, 18).padding(.vertical, 12)
+        .opacity(it.disabled ? 0.65 : 1)
     }
 
     private func run(_ it: StartupItem) {
         Task {
-            if let err = await store.toggle(it) { message = ("Nu am putut schimba „\(it.label)”", err) }
+            if let err = await store.toggle(it) { message = (tr("Nu am putut schimba „\(it.label)”"), err) }
         }
     }
 }

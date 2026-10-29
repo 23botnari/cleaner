@@ -1,14 +1,18 @@
 #!/bin/zsh
-# Compilează „Cleaner”, asamblează .app, semnează și instalează în ~/Applications.
+# Compilează „Cleaner MacOS”, asamblează .app, semnează și instalează în ~/Applications.
 set -euo pipefail
 cd "$(dirname "$0")"
 
-APP_NAME="Cleaner"
+APP_NAME="Cleaner MacOS"
 BUILD_DIR="build"
 APP="$BUILD_DIR/$APP_NAME.app"
 # Aceeași identitate la fiecare build => permisiunea Full Disk Access rămâne valabilă.
 # Implicit: certificatul cu care e semnată copia instalată, altfel primul „Apple Development” din Keychain.
-INSTALLED_ID="$(codesign -dvv "$HOME/Applications/$APP_NAME.app" 2>&1 | sed -n 's/^Authority=\(Apple Development: .*\)/\1/p' | head -1)"
+INSTALLED_ID=""
+for CANDIDATE in "$APP_NAME" "Cleaner" "Curățenie Mac"; do
+  [[ -n "$INSTALLED_ID" ]] && break
+  INSTALLED_ID="$(codesign -dvv "$HOME/Applications/$CANDIDATE.app" 2>&1 | sed -n 's/^Authority=\(Apple Development: .*\)/\1/p' | head -1 || true)"
+done
 SIGN_ID="${SIGN_ID:-${INSTALLED_ID:-$(security find-identity -v -p codesigning | sed -n 's/.*"\(Apple Development: .*\)"/\1/p' | head -1)}}"
 
 # Command Line Tools pe macOS 27 nu au pluginul SwiftUIMacros cerut de SDK-ul 27: compilăm cu SDK-ul 26.
@@ -25,8 +29,10 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Cleaner"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
+for LPROJ in Resources/*.lproj; do ditto "$LPROJ" "$APP/Contents/Resources/$(basename "$LPROJ")"; done
 
-if [[ ! -f "$BUILD_DIR/AppIcon.icns" ]]; then
+if [[ ! -f "$BUILD_DIR/AppIcon.icns" || scripts/make_icon.swift -nt "$BUILD_DIR/AppIcon.icns" ]]; then
+  rm -rf "$BUILD_DIR/AppIcon.iconset"
   swift scripts/make_icon.swift "$BUILD_DIR/AppIcon.iconset"
   iconutil -c icns "$BUILD_DIR/AppIcon.iconset" -o "$BUILD_DIR/AppIcon.icns"
 fi
@@ -44,17 +50,24 @@ if [[ "${1:-}" == "--install" ]]; then
   mkdir -p "$HOME/Applications"
   pkill -x Cleaner 2>/dev/null || true
   rm -rf "$HOME/Applications/$APP_NAME.app"
+  # Copia cu numele vechi (același bundle ID) ar încurca LaunchServices: o mut la Coș, recuperabil.
+  for OLD in "Cleaner" "Curățenie Mac"; do
+    if [[ -d "$HOME/Applications/$OLD.app" ]]; then
+      mv "$HOME/Applications/$OLD.app" "$HOME/.Trash/$OLD $(date +%H.%M.%S).app"
+      echo "Mutat la Coș: $HOME/Applications/$OLD.app"
+    fi
+  done
   ditto "$APP" "$HOME/Applications/$APP_NAME.app"
   echo "Instalat: $HOME/Applications/$APP_NAME.app"
 fi
 
 if [[ "${1:-}" == "--dmg" ]]; then
   STAGE="$BUILD_DIR/dmg"
-  rm -rf "$STAGE" "$BUILD_DIR/Cleaner.dmg"
+  rm -rf "$STAGE" "$BUILD_DIR/CleanerMacOS.dmg"
   mkdir -p "$STAGE"
   ditto "$APP" "$STAGE/$APP_NAME.app"
   ln -s /Applications "$STAGE/Applications"
-  hdiutil create -volname "$APP_NAME" -srcfolder "$STAGE" -ov -format UDZO "$BUILD_DIR/Cleaner.dmg" >/dev/null
+  hdiutil create -volname "$APP_NAME" -srcfolder "$STAGE" -ov -format UDZO "$BUILD_DIR/CleanerMacOS.dmg" >/dev/null
   rm -rf "$STAGE"
-  echo "DMG: $PWD/$BUILD_DIR/Cleaner.dmg"
+  echo "DMG: $PWD/$BUILD_DIR/CleanerMacOS.dmg"
 fi

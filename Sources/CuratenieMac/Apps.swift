@@ -7,7 +7,7 @@ import CoreServices
 struct VolumeInfo: Sendable, Hashable {
     let name: String
     let isInternal: Bool
-    var label: String { isInternal ? "Mac (disc intern)" : "\(name) (extern)" }
+    var label: String { isInternal ? tr("Mac (disc intern)") : tr("\(name) (extern)") }
 
     static func of(_ path: String) -> VolumeInfo {
         let v = try? URL(fileURLWithPath: path).resourceValues(forKeys: [.volumeLocalizedNameKey, .volumeIsInternalKey, .volumeIsRootFileSystemKey])
@@ -136,12 +136,12 @@ enum AppScanner {
     /// Reguli pentru .app în afara home-ului: doar în /Applications sau ~/Applications, pe discul intern, fără Apple.
     static func uninstallable(_ app: AppEntry) -> String? {
         let real = Paths.realpath(app.path)
-        guard real.hasSuffix(".app"), Paths.isDir(real) else { return "Nu e un pachet de aplicație." }
+        guard real.hasSuffix(".app"), Paths.isDir(real) else { return tr("Nu e un pachet de aplicație.") }
         guard real.hasPrefix("/Applications/") || real.hasPrefix(Paths.realHome + "/Applications/") else {
-            return "Dezinstalez doar aplicații din /Applications sau ~/Applications."
+            return tr("Dezinstalez doar aplicații din /Applications sau ~/Applications.")
         }
-        guard VolumeInfo.of(real).isInternal else { return "Aplicația e pe un disc extern; nu o ating." }
-        guard app.bundleID != "com.apple.Safari", app.bundleID != ownBundleID else { return "Aplicație de sistem." }
+        guard VolumeInfo.of(real).isInternal else { return tr("Aplicația e pe un disc extern; nu o ating.") }
+        guard app.bundleID != "com.apple.Safari", app.bundleID != ownBundleID else { return tr("Aplicație de sistem.") }
         return nil
     }
 
@@ -161,7 +161,7 @@ enum AppScanner {
             let r = Shell.run("/usr/bin/osascript", ["-e", "on run argv", "-e", "tell application \"Finder\" to delete (POSIX file (item 1 of argv) as alias)",
                                                      "-e", "end run", path], timeout: 300)
             if r.code == 0 { return nil }
-            return "Nu am putut muta aplicația la Coș: \(r.err.trimmingCharacters(in: .whitespacesAndNewlines).prefix(200))"
+            return tr("Nu am putut muta aplicația la Coș: \(String(r.err.trimmingCharacters(in: .whitespacesAndNewlines).prefix(200)))")
         }
     }
 }
@@ -230,7 +230,7 @@ final class AppsStore: ObservableObject {
 struct AppsView: View {
     @ObservedObject var store: AppsStore
     var onChange: () -> Void
-    @State private var sheetApp: AppEntry?
+    @State private var selectedID: String?
     @State private var quit: QuitPrompt?
     @State private var message: (title: String, body: String)?
 
@@ -241,40 +241,47 @@ struct AppsView: View {
     }()
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text("Aplicații pe discul intern: \(Fmt.bytes(store.internalTotal))")
-                    .foregroundStyle(.secondary).monospacedDigit()
-                if store.apps.contains(where: { $0.size == nil }) { ProgressView().controlSize(.small) }
-                Spacer()
-                Toggle("Arată și aplicațiile de pe discuri externe", isOn: $store.showExternal).toggleStyle(.checkbox)
-            }
-            .padding(.horizontal, 24).padding(.vertical, 10)
-            Divider()
-            if store.loading {
-                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                let items = store.visible
-                let maxSize = max(1, items.compactMap(\.total).max() ?? 1)
-                List(items) { a in row(a, maxSize: maxSize) }
-                    .listStyle(.inset(alternatesRowBackgrounds: true))
-            }
-        }
-        .sheet(item: $sheetApp) { app in
-            UninstallSheet(app: app) { result in
-                sheetApp = nil
-                switch result {
-                case .cancelled: break
-                case .done(let freed, let errors):
-                    store.remove(app.path)
-                    onChange()
-                    message = errors.isEmpty
-                        ? ("„\(app.name)” a fost mutată la Coș", "\(Fmt.bytes(freed)) se eliberează după golirea Coșului.")
-                        : ("Dezinstalare parțială", errors.joined(separator: "\n"))
-                case .failed(let err):
-                    message = ("Nu am putut dezinstala „\(app.name)”", err)
+        let items = store.visible
+        let maxSize = Double(max(1, items.compactMap(\.total).max() ?? 1))
+        let selected = items.first { $0.id == selectedID } ?? items.first
+        HStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 16) {
+                    legend(Theme.dyn(0x3D6FE0, 0x5B8AF0), "Aplicația")
+                    legend(Theme.dyn(0xA9C0F5, 0x3A5490), "Date în ~/Library")
+                    if store.apps.contains(where: { $0.size == nil || $0.dataSize == nil }) { ProgressView().controlSize(.small) }
+                    Spacer()
+                    Toggle("Doar discul intern", isOn: Binding(get: { !store.showExternal }, set: { store.showExternal = !$0 }))
+                        .toggleStyle(.checkbox)
+                }
+                .font(.system(size: 12))
+                .lineLimit(1)
+                .padding(.horizontal, 28).padding(.bottom, 10)
+                if store.loading {
+                    ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ScrollView {
+                        LazyVStack(spacing: 6) {
+                            ForEach(items) { a in row(a, maxSize: maxSize, on: a.id == selected?.id) }
+                        }
+                        .padding(.leading, 28).padding(.trailing, 16).padding(.bottom, 16)
+                    }
                 }
             }
+            .frame(maxWidth: .infinity)
+            Rectangle().fill(Theme.line).frame(width: 1)
+            Group {
+                if let selected {
+                    AppInspector(app: selected, uninstall: { chosen in ask(selected, chosen: chosen) })
+                        .id(selected.id)
+                } else {
+                    Text("Alege o aplicație.").foregroundStyle(Theme.muted)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+            .frame(width: 340)
+            .frame(maxHeight: .infinity)
+            .background(Theme.card)
         }
         .alert(message?.title ?? "", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
             Button("OK") { message = nil }
@@ -282,74 +289,88 @@ struct AppsView: View {
         .quitPrompt($quit, message: $message)
     }
 
-    @ViewBuilder
-    private func row(_ a: AppEntry, maxSize: Int64) -> some View {
-        let blocked = AppScanner.uninstallable(a)
-        HStack(spacing: 12) {
-            Image(nsImage: NSWorkspace.shared.icon(forFile: a.path)).resizable().frame(width: 32, height: 32)
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text(a.name).fontWeight(.semibold)
-                    if !a.version.isEmpty { Text(a.version).font(.caption).foregroundStyle(.tertiary) }
-                    VolumeBadge(volume: a.volume)
-                }
-                Text(a.path).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-                    .textSelection(.enabled)
-                if let top = a.dataTop, (a.dataSize ?? 0) >= 50_000_000 {
-                    Text("Date: \(top)\(a.volume.isInternal ? "" : " — pe discul intern")")
-                        .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-                }
-                HStack(spacing: 8) {
-                    if let d = a.lastUsed {
-                        Text("Folosită ultima dată: \(Self.dateFmt.string(from: d))").font(.caption).foregroundStyle(.tertiary)
-                    } else {
-                        Text("Nefolosită niciodată (după Spotlight)").font(.caption).foregroundStyle(.tertiary)
-                    }
-                    if a.hasSystemParts {
-                        Text("Are componente de sistem: preferă dezinstalatorul ei").font(.caption).foregroundStyle(.orange)
-                    }
-                }
-            }
-            Spacer(minLength: 12)
-            VStack(alignment: .trailing, spacing: 3) {
-                if let t = a.total { Text(Fmt.bytes(t)).fontWeight(.semibold).monospacedDigit() }
-                else { ProgressView().controlSize(.mini) }
-                if let s = a.size {
-                    Text("app \(Fmt.bytes(s)) + date \(a.dataSize.map { Fmt.bytes($0) } ?? "…")")
-                        .font(.caption2).foregroundStyle(.secondary).monospacedDigit()
-                }
-                ProgressView(value: Double(a.total ?? 0), total: Double(maxSize)).tint(.gray)
-            }
-            .frame(width: 170)
-            Button("Arată în Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: a.path)]) }
-                .controlSize(.small)
-            Button("Dezinstalează…") { ask(a) }
-                .controlSize(.small)
-                .disabled(blocked != nil)
-                .help(blocked ?? "Mută aplicația și fișierele ei din ~/Library la Coș")
+    private func legend(_ c: Color, _ label: LocalizedStringKey) -> some View {
+        HStack(spacing: 6) {
+            RoundedRectangle(cornerRadius: 3).fill(c).frame(width: 10, height: 10)
+            Text(label).foregroundStyle(Theme.muted)
         }
-        .padding(.vertical, 4)
-        .opacity(a.volume.isInternal ? 1 : 0.7)
+        .fixedSize()
     }
 
-    private func ask(_ a: AppEntry) {
+    private func row(_ a: AppEntry, maxSize: Double, on: Bool) -> some View {
+        Button { selectedID = a.id } label: {
+            HStack(spacing: 14) {
+                Image(nsImage: NSWorkspace.shared.icon(forFile: a.path)).resizable().frame(width: 40, height: 40)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        Text(a.name).fontWeight(.semibold).lineLimit(1).layoutPriority(2)
+                        VolumePill(volume: a.volume)
+                        if AppScanner.runningApp(a) {
+                            HStack(spacing: 4) {
+                                Circle().fill(Theme.reclaim).frame(width: 6, height: 6)
+                                Text("Rulează")
+                            }
+                            .font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.safeFg)
+                            .fixedSize()
+                        }
+                    }
+                    Text(a.path).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(Theme.muted)
+                        .lineLimit(1).truncationMode(.middle)
+                    GeometryReader { g in
+                        HStack(spacing: 0) {
+                            Rectangle().fill(Theme.dyn(0x3D6FE0, 0x5B8AF0))
+                                .frame(width: g.size.width * Double(a.size ?? 0) / maxSize)
+                            Rectangle().fill(Theme.dyn(0xA9C0F5, 0x3A5490))
+                                .frame(width: g.size.width * Double(a.dataSize ?? 0) / maxSize)
+                            Spacer(minLength: 0)
+                        }
+                        .background(Theme.lineSoft)
+                        .clipShape(Capsule())
+                    }
+                    .frame(height: 6)
+                    .accessibilityHidden(true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .trailing, spacing: 2) {
+                    if let t = a.total { Text(Fmt.bytes(t)).font(.system(size: 15, weight: .bold)).monospacedDigit() }
+                    else { ProgressView().controlSize(.small) }
+                    if let s = a.size {
+                        Text("app \(Fmt.bytes(s)) + date \(a.dataSize.map { Fmt.bytes($0) } ?? "…")")
+                            .font(.system(size: 11.5)).foregroundStyle(Theme.muted).monospacedDigit().lineLimit(1)
+                    }
+                }
+                .fixedSize()
+            }
+            .padding(.horizontal, 14).padding(.vertical, 12)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Theme.card))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(on ? Theme.accent : Theme.line, lineWidth: on ? 1.5 : 1))
+        .opacity(a.volume.isInternal ? 1 : 0.8)
+        .accessibilityAddTraits(on ? .isSelected : [])
+    }
+
+    private func ask(_ a: AppEntry, chosen: [Leftover]) {
         let running = AppQuitter.matching(bundleID: a.bundleID, path: a.path)
-        if running.isEmpty {
-            sheetApp = a
-        } else {
-            quit = QuitPrompt(name: a.name, apps: running, action: "dezinstalare") { ask(a) }
+        guard running.isEmpty else {
+            quit = QuitPrompt(name: a.name, apps: running, action: tr("dezinstalare")) { ask(a, chosen: chosen) }
+            return
         }
-    }
-}
-
-struct VolumeBadge: View {
-    let volume: VolumeInfo
-    var body: some View {
-        Label(volume.label, systemImage: volume.isInternal ? "internaldrive" : "externaldrive")
-            .font(.caption2.weight(.semibold))
-            .padding(.horizontal, 6).padding(.vertical, 1)
-            .background(RoundedRectangle(cornerRadius: 4).fill(volume.isInternal ? Color.blue.opacity(0.16) : Color.purple.opacity(0.18)))
-            .foregroundStyle(volume.isInternal ? Color.blue : Color.purple)
+        Task {
+            switch await Uninstaller.run(a, leftovers: chosen) {
+            case .cancelled: break
+            case .done(let freed, let errors):
+                store.remove(a.path)
+                selectedID = nil
+                onChange()
+                message = errors.isEmpty
+                    ? (tr("„\(a.name)” a fost mutată la Coș"), tr("\(Fmt.bytes(freed)) se eliberează după golirea Coșului."))
+                    : (tr("Dezinstalare parțială"), errors.joined(separator: "\n"))
+            case .failed(let err):
+                message = (tr("Nu am putut dezinstala „\(a.name)”"), err)
+            }
+        }
     }
 }
 
@@ -359,110 +380,176 @@ enum UninstallResult {
     case failed(String)
 }
 
-struct UninstallSheet: View {
+enum Uninstaller {
+    static func run(_ a: AppEntry, leftovers chosen: [Leftover]) async -> UninstallResult {
+        if AppScanner.runningApp(a) { return .failed(tr("Închide \(a.name) înainte de dezinstalare.")) }
+        if let why = AppScanner.uninstallable(a) { return .failed(why) }
+        return await offMain {
+            if let err = AppScanner.trashApp(Paths.realpath(a.path)) { return .failed(err) }
+            var errors: [String] = []
+            var freed = a.size ?? 0
+            for l in chosen {
+                guard Paths.deletable(l.path) else { errors.append(tr("Sărit (protejat): \(l.display)")); continue }
+                do {
+                    try FileManager.default.trashItem(at: URL(fileURLWithPath: l.path), resultingItemURL: nil)
+                    freed += l.size
+                } catch {
+                    errors.append("\(l.display): \(error.localizedDescription)")
+                }
+            }
+            return .done(freed: freed, errors: errors)
+        }
+    }
+}
+
+/// Panoul din dreapta: detalii, ce se mută la Coș (cu bife), închidere automată.
+struct AppInspector: View {
     let app: AppEntry
-    var finish: (UninstallResult) -> Void
+    var uninstall: ([Leftover]) -> Void
     @State private var leftovers: [Leftover]?
-    @State private var selected: Set<String> = []
-    @State private var working = false
+    @State private var keep: Set<String> = []
+    @State private var confirming = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 12) {
-                Image(nsImage: NSWorkspace.shared.icon(forFile: app.path)).resizable().frame(width: 48, height: 48)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Dezinstalezi „\(app.name)”?").font(.title3.weight(.semibold))
-                    HStack { VolumeBadge(volume: app.volume); Text("aplicația: \(Fmt.bytes(app.size))").foregroundStyle(.secondary) }
-                }
-            }
-            GroupBox("Aplicația") {
-                Text(app.path).font(.callout.monospaced()).textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            if app.hasSystemParts {
-                Text("Aplicația are drivere sau servicii de sistem. Dacă are un dezinstalator propriu (ex. „Uninstall …”), folosește-l pe acela; mutarea la Coș poate lăsa componente active.")
-                    .font(.callout).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
-            }
-            GroupBox("Fișiere rămase în ~/Library") {
-                if let leftovers {
-                    if leftovers.isEmpty {
-                        Text("Nu am găsit fișiere rămase.").foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
-                    } else {
-                        ScrollView {
-                            VStack(alignment: .leading, spacing: 4) {
-                                ForEach(leftovers) { l in
-                                    Toggle(isOn: Binding(get: { selected.contains(l.path) },
-                                                         set: { on in if on { selected.insert(l.path) } else { selected.remove(l.path) } })) {
-                                        HStack {
-                                            Text(l.display).font(.callout.monospaced()).lineLimit(1).truncationMode(.middle)
-                                            Spacer()
-                                            Text(Fmt.bytes(l.size)).font(.callout).foregroundStyle(.secondary).monospacedDigit()
-                                        }
-                                    }
-                                    .toggleStyle(.checkbox)
-                                }
-                            }
+        let blocked = AppScanner.uninstallable(app)
+        let running = AppScanner.runningApp(app)
+        let chosen = (leftovers ?? []).filter { !keep.contains($0.path) }
+        let bytes = (app.size ?? 0) + chosen.reduce(0) { $0 + $1.size }
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 14) {
+                    Image(nsImage: NSWorkspace.shared.icon(forFile: app.path)).resizable().frame(width: 56, height: 56)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(app.name).font(.system(size: 18, weight: .bold)).lineLimit(2)
+                        HStack(spacing: 8) {
+                            if !app.version.isEmpty { Text(app.version).font(.system(size: 12)).foregroundStyle(Theme.faint) }
+                            VolumePill(volume: app.volume, long: true)
                         }
-                        .frame(maxHeight: 200)
-                        Text("Datele din aceste foldere (setări, conturi, istoric) se pierd după golirea Coșului. Debifează ce vrei să păstrezi.")
-                            .font(.caption).foregroundStyle(.secondary)
                     }
-                } else {
-                    HStack { ProgressView().controlSize(.small); Text("Caut fișiere rămase…").foregroundStyle(.secondary) }
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                Text(app.path)
+                    .font(.system(size: 12, design: .monospaced)).foregroundStyle(Theme.muted)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12).padding(.vertical, 10)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Theme.lineSoft))
+                HStack(alignment: .top) {
+                    stat("APLICAȚIA", Fmt.bytes(app.size))
+                    stat("DATE", Fmt.bytes(app.dataSize))
+                    stat("FOLOSITĂ", app.lastUsed.map { AppsView.dateFmt.string(from: $0) } ?? "—")
                 }
             }
-            Text("Totul se mută la Coș și poate fi recuperat până îl golești.").font(.caption).foregroundStyle(.secondary)
-            HStack {
-                Spacer()
-                Button("Anulează") { finish(.cancelled) }.keyboardShortcut(.cancelAction)
-                Button(working ? "Se mută…" : "Mută la Coș") { run() }
-                    .buttonStyle(.borderedProminent).tint(.red)
-                    .disabled(leftovers == nil || working)
+            .padding(22)
+            Rectangle().fill(Theme.lineSoft).frame(height: 1)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    if !app.volume.isInternal {
+                        notice("externaldrive", Theme.extBg, Theme.extFg,
+                               tr("Pe \(app.volume.name). Nu ocupă loc pe Mac și nu se dezinstalează de aici."))
+                    }
+                    if app.hasSystemParts {
+                        notice("exclamationmark.triangle", Theme.careBg, Theme.careFg,
+                               tr("Are componente de sistem. Folosește dezinstalatorul ei, altfel pot rămâne servicii active."))
+                    }
+                    if blocked == nil {
+                        Text("Se mută la Coș").font(.system(size: 13, weight: .bold))
+                        HStack(spacing: 10) {
+                            Toggle("", isOn: .constant(true)).toggleStyle(.checkbox).labelsHidden().disabled(true)
+                            Text((app.path as NSString).lastPathComponent)
+                                .font(.system(size: 12, design: .monospaced)).lineLimit(1).truncationMode(.middle)
+                            Spacer()
+                            Text(Fmt.bytes(app.size)).fontWeight(.semibold).monospacedDigit()
+                        }
+                        .font(.system(size: 13))
+                        if let leftovers {
+                            ForEach(leftovers) { l in
+                                HStack(spacing: 10) {
+                                    Toggle("", isOn: Binding(get: { !keep.contains(l.path) },
+                                                             set: { on in if on { keep.remove(l.path) } else { keep.insert(l.path) } }))
+                                        .toggleStyle(.checkbox).labelsHidden()
+                                        .accessibilityLabel(Text(l.display))
+                                    Text(l.display).font(.system(size: 12, design: .monospaced))
+                                        .lineLimit(1).truncationMode(.head)
+                                        .help(l.display)
+                                    Spacer()
+                                    Text(Fmt.bytes(l.size)).fontWeight(.semibold).monospacedDigit()
+                                }
+                                .font(.system(size: 13))
+                            }
+                            Text("Debifează datele pe care vrei să le păstrezi (setări, conturi, istoric). Totul se poate recupera din Coș.")
+                                .font(.system(size: 12)).foregroundStyle(Theme.muted)
+                                .fixedSize(horizontal: false, vertical: true)
+                        } else {
+                            HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Caut fișiere rămase…") }
+                                .font(.system(size: 12)).foregroundStyle(Theme.muted)
+                        }
+                        if running {
+                            notice("power", Theme.safeBg, Theme.safeFg,
+                                   tr("\(app.name) rulează. O închid normal înainte; dacă nu se închide în 10 secunde, te întreb dacă o forțez."))
+                        }
+                    }
+                }
+                .padding(22)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
+
+            Rectangle().fill(Theme.lineSoft).frame(height: 1)
+            VStack(spacing: 10) {
+                if blocked == nil {
+                    HStack {
+                        Text("Total la Coș").foregroundStyle(Theme.muted)
+                        Spacer()
+                        Text(Fmt.bytes(bytes)).fontWeight(.bold).monospacedDigit()
+                    }
+                    .font(.system(size: 13))
+                }
+                HStack(spacing: 8) {
+                    Button { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: app.path)]) } label: {
+                        Image(systemName: "magnifyingglass")
+                    }
+                    .buttonStyle(SecondaryButtonStyle())
+                    .help(tr("Arată în Finder"))
+                    .accessibilityLabel(Text("Arată în Finder"))
+                    Button(blocked != nil ? tr("Pe disc extern") : running ? tr("Închide și dezinstalează") : tr("Dezinstalează")) {
+                        confirming = true
+                    }
+                    .buttonStyle(PrimaryButtonStyle(tint: Theme.danger, fill: true))
+                    .disabled(blocked != nil || leftovers == nil)
+                    .help(blocked ?? "")
+                }
+            }
+            .padding(.horizontal, 22).padding(.vertical, 14)
         }
-        .padding(20)
-        .frame(width: 600)
         .task {
             let a = app
-            let found = await offMain { AppScanner.leftovers(for: a) }
-            leftovers = found
-            selected = Set(found.map(\.path))
+            leftovers = await offMain { AppScanner.leftovers(for: a) }
+        }
+        .confirmationDialog(Text("Muți „\(app.name)” la Coș?"), isPresented: $confirming, titleVisibility: .visible) {
+            Button("Dezinstalează", role: .destructive) { uninstall(chosen) }
+            Button("Anulează", role: .cancel) {}
+        } message: {
+            Text("\(Fmt.bytes(bytes)) în \(chosen.count + 1) elemente. Totul se poate recupera din Coș până îl golești.")
         }
     }
 
-    private func run() {
-        working = true
-        let a = app
-        let chosen = (leftovers ?? []).filter { selected.contains($0.path) }
-        Task {
-            if AppScanner.runningApp(a) {
-                working = false
-                finish(.failed("Închide \(a.name) înainte de dezinstalare."))
-                return
-            }
-            if let why = AppScanner.uninstallable(a) {
-                working = false
-                finish(.failed(why))
-                return
-            }
-            let result: UninstallResult = await offMain {
-                if let err = AppScanner.trashApp(Paths.realpath(a.path)) { return .failed(err) }
-                var errors: [String] = []
-                var freed = a.size ?? 0
-                for l in chosen {
-                    guard Paths.deletable(l.path) else { errors.append("Sărit (protejat): \(l.display)"); continue }
-                    do {
-                        try FileManager.default.trashItem(at: URL(fileURLWithPath: l.path), resultingItemURL: nil)
-                        freed += l.size
-                    } catch {
-                        errors.append("\(l.display): \(error.localizedDescription)")
-                    }
-                }
-                return .done(freed: freed, errors: errors)
-            }
-            working = false
-            finish(result)
+    private func stat(_ label: LocalizedStringKey, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label).font(.system(size: 11, weight: .semibold)).tracking(0.4).foregroundStyle(Theme.muted)
+            Text(value).fontWeight(.bold).monospacedDigit()
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func notice(_ icon: String, _ bg: Color, _ fg: Color, _ text: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: icon)
+            Text(text).fixedSize(horizontal: false, vertical: true)
+        }
+        .font(.system(size: 13))
+        .foregroundStyle(fg)
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 10).fill(bg))
     }
 }

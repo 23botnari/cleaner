@@ -226,10 +226,10 @@ struct QuitPrompt: Identifiable {
 
 extension View {
     func quitPrompt(_ prompt: Binding<QuitPrompt?>, message: Binding<(title: String, body: String)?>) -> some View {
-        alert(prompt.wrappedValue.map { $0.forced ? "„\($0.name)” nu s-a închis" : "„\($0.name)” rulează" } ?? "",
+        alert(prompt.wrappedValue.map { $0.forced ? tr("„\($0.name)” nu s-a închis") : tr("„\($0.name)” rulează") } ?? "",
               isPresented: Binding(get: { prompt.wrappedValue != nil }, set: { if !$0 { prompt.wrappedValue = nil } }),
               presenting: prompt.wrappedValue) { p in
-            Button(p.forced ? "Forțează închiderea" : "Închide \(p.name)", role: p.forced ? .destructive : nil) {
+            Button(p.forced ? tr("Forțează închiderea") : tr("Închide \(p.name)"), role: p.forced ? .destructive : nil) {
                 prompt.wrappedValue = nil
                 Task { @MainActor in
                     if await AppQuitter.quit(p.apps, force: p.forced) {
@@ -239,15 +239,15 @@ extension View {
                         next.forced = true
                         prompt.wrappedValue = next
                     } else {
-                        message.wrappedValue = ("„\(p.name)” încă rulează", "Închide-o manual, apoi încearcă din nou.")
+                        message.wrappedValue = (tr("„\(p.name)” încă rulează"), tr("Închide-o manual, apoi încearcă din nou."))
                     }
                 }
             }
             Button("Anulează", role: .cancel) { prompt.wrappedValue = nil }
         } message: { p in
             Text(p.forced
-                 ? "Probabil așteaptă un răspuns (ex. salvarea unui document). Verifică fereastra ei sau forțează închiderea; modificările nesalvate se pierd."
-                 : "Trebuie închisă înainte de \(p.action). O închid acum, apoi continui.")
+                 ? tr("Probabil așteaptă un răspuns (ex. salvarea unui document). Verifică fereastra ei sau forțează închiderea; modificările nesalvate se pierd.")
+                 : tr("Trebuie închisă înainte de \(p.action). O închid acum, apoi continui."))
         }
     }
 }
