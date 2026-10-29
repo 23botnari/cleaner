@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key><string>ro</string>
+	<key>CFBundleExecutable</key><string>Cleaner</string>
+	<key>CFBundleIdentifier</key><string>io.webitfactory.CuratenieMac</string>
+	<key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+	<key>CFBundleName</key><string>Cleaner</string>
+	<key>CFBundleDisplayName</key><string>Cleaner</string>
+	<key>CFBundlePackageType</key><string>APPL</string>
+	<key>CFBundleShortVersionString</key><string>1.0</string>
+	<key>CFBundleVersion</key><string>1</string>
+	<key>CFBundleIconFile</key><string>AppIcon</string>
+	<key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
+	<key>LSMinimumSystemVersion</key><string>15.0</string>
+	<key>NSHighResolutionCapable</key><true/>
+	<key>NSPrincipalClass</key><string>NSApplication</string>
+	<key>NSAppleEventsUsageDescription</key><string>Cleaner cere Finder-ului să mute la Coș aplicațiile care aparțin altui utilizator (de ex. din App Store) și resturile din /Library sau protejate de macOS. Finder îți va cere parola de administrator.</string>
+	<key>NSHumanReadableCopyright</key><string>Uz personal</string>
+</dict>
+</plist>
