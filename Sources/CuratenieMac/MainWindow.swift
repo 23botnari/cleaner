@@ -11,15 +11,16 @@ func trKey(_ key: String) -> String { Bundle.main.localizedString(forKey: key, v
 // MARK: - Secțiuni
 
 enum Section: String, Hashable, CaseIterable {
-    case overview, rec, big, exp, apps, left, start, settings
+    case overview, rec, dev, big, exp, apps, left, start, settings
 
     /// Ce apare în lista principală din bara laterală (Setări are butonul ei, jos).
-    static let main: [Section] = [.overview, .rec, .big, .exp, .apps, .left, .start]
+    static let main: [Section] = [.overview, .rec, .dev, .big, .exp, .apps, .left, .start]
 
     var title: LocalizedStringKey {
         switch self {
         case .overview: "Prezentare"
         case .rec: "Recomandări"
+        case .dev: "Dezvoltator"
         case .big: "Fișiere mari"
         case .exp: "Explorator"
         case .apps: "Aplicații"
@@ -33,6 +34,7 @@ enum Section: String, Hashable, CaseIterable {
         switch self {
         case .overview: "gauge.with.dots.needle.33percent"
         case .rec: "checklist"
+        case .dev: "hammer"
         case .big: "doc.text.magnifyingglass"
         case .exp: "folder"
         case .apps: "square.grid.2x2"
@@ -81,6 +83,7 @@ enum GroupInfo {
 struct ContentView: View {
     @ObservedObject var rec: RecommendationsStore
     @ObservedObject var left: LeftoversStore
+    @ObservedObject var update: UpdateStore
     @StateObject private var exp = ExplorerStore()
     @StateObject private var big = ExplorerStore()
     @StateObject private var apps = AppsStore()
@@ -92,7 +95,7 @@ struct ContentView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            AppSidebar(section: $section, rec: rec, hasFDA: hasFDA)
+            AppSidebar(section: $section, rec: rec, update: update, hasFDA: hasFDA)
                 .frame(width: 264)
             Rectangle().fill(Theme.sidebarLine).frame(width: 1)
             VStack(spacing: 0) {
@@ -128,6 +131,10 @@ struct ContentView: View {
             rec.refreshDisk()
         }
         .onReceive(NotificationCenter.default.publisher(for: .openCleanerSettings)) { _ in section = .settings }
+        .onReceive(NotificationCenter.default.publisher(for: .profileChanged)) { _ in
+            if section == .dev && !Profile.devMode { section = .rec }
+            rec.scan()
+        }
     }
 
     private var subtitle: String {
@@ -137,7 +144,12 @@ struct ContentView: View {
                 ?? tr("Se scanează…")
         case .rec:
             if rec.scanning { return tr("Se scanează…") }
-            return tr("\(Fmt.bytes(rec.reclaimable)) găsiți în \(rec.targets.count) elemente. Ce e marcat „Sigur” se reface singur.")
+            let n = rec.targets.filter { !$0.isDev }.count
+            return tr("\(Fmt.bytes(rec.reclaimable(dev: false))) găsiți în \(n) elemente. Ce e marcat „Sigur” se reface singur.")
+        case .dev:
+            if rec.scanning { return tr("Se scanează…") }
+            let n = rec.targets.filter(\.isDev).count
+            return tr("\(Fmt.bytes(rec.reclaimable(dev: true))) în \(n) elemente de dezvoltare: cache-uri, build-uri și dependențe care se refac.")
         case .big:
             return tr("Fișiere și pachete de peste 50 MB. Vezi exact unde se află, înainte să le muți la Coș.")
         case .exp:
@@ -163,16 +175,17 @@ struct ContentView: View {
                 case "big": section = .big
                 default:
                     focusGroup = target
-                    section = .rec
+                    section = rec.targets.contains { $0.group == target && $0.isDev } ? .dev : .rec
                 }
             }
-        case .rec: RecommendationsView(store: rec, flow: flow, focusGroup: $focusGroup)
+        case .rec: RecommendationsView(store: rec, flow: flow, focusGroup: $focusGroup, dev: false)
+        case .dev: RecommendationsView(store: rec, flow: flow, focusGroup: $focusGroup, dev: true)
         case .big: ExplorerView(store: big, onChange: { rec.refreshDisk() })
         case .exp: ExplorerView(store: exp, onChange: { rec.refreshDisk() })
         case .apps: AppsView(store: apps, onChange: { rec.refreshDisk() })
         case .left: LeftoversView(store: left, hasFDA: hasFDA, onChange: { rec.refreshDisk() })
         case .start: StartupView(store: startup)
-        case .settings: SettingsPage()
+        case .settings: SettingsPage(update: update)
         }
     }
 
@@ -180,7 +193,7 @@ struct ContentView: View {
     private var refreshButton: some View {
         let label = Label(section == .exp || section == .start ? tr("Reîmprospătează") : tr("Scanează din nou"), systemImage: "arrow.clockwise")
         switch section {
-        case .overview, .rec:
+        case .overview, .rec, .dev:
             Button { rec.scan() } label: { label }.buttonStyle(SecondaryButtonStyle(height: 34)).disabled(rec.scanning)
         case .apps:
             Button { apps.scan() } label: { label }.buttonStyle(SecondaryButtonStyle(height: 34)).disabled(apps.loading)
@@ -201,22 +214,25 @@ struct ContentView: View {
 struct AppSidebar: View {
     @Binding var section: Section
     @ObservedObject var rec: RecommendationsStore
+    @ObservedObject var update: UpdateStore
     let hasFDA: Bool
+    @AppStorage(Profile.devModeKey) private var devMode = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text("Cleaner MacOS")
                 .font(.system(size: 15, weight: .bold))
                 .padding(.horizontal, 10).padding(.top, 50).padding(.bottom, 14)
-            ForEach(Section.main, id: \.self) { s in
+            ForEach(Section.main.filter { $0 != .dev || devMode }, id: \.self) { s in
                 let on = s == section
+                let badge = s == .rec ? rec.reclaimable(dev: false) : s == .dev ? rec.reclaimable(dev: true) : 0
                 Button { section = s } label: {
                     HStack(spacing: 10) {
                         Image(systemName: s.icon).font(.system(size: 14, weight: .medium)).frame(width: 18)
                         Text(s.title).font(.system(size: 13.5, weight: on ? .semibold : .medium)).lineLimit(1).minimumScaleFactor(0.8)
                         Spacer(minLength: 4)
-                        if s == .rec && rec.reclaimable > 0 {
-                            Text(Fmt.bytes(rec.reclaimable))
+                        if badge > 0 {
+                            Text(Fmt.bytes(badge))
                                 .font(.system(size: 11.5, weight: .semibold)).monospacedDigit()
                                 .padding(.horizontal, 7).padding(.vertical, 1)
                                 .background(Capsule().fill(Theme.safeBg))
@@ -237,6 +253,22 @@ struct AppSidebar: View {
                 .accessibilityAddTraits(on ? .isSelected : [])
             }
             Spacer()
+            if let r = update.release {
+                Button { section = .settings } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "arrow.down.circle.fill").font(.system(size: 14, weight: .medium)).frame(width: 18)
+                        Text("Versiunea \(r.version) e disponibilă").font(.system(size: 12.5, weight: .semibold))
+                            .lineLimit(1).minimumScaleFactor(0.8)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 10).frame(height: 34)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Theme.safeBg))
+                    .foregroundStyle(Theme.safeFg)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.bottom, 4)
+            }
             Button { section = .settings } label: {
                 HStack(spacing: 10) {
                     Image(systemName: "gearshape").font(.system(size: 14, weight: .medium)).frame(width: 18)
@@ -479,14 +511,18 @@ struct RecommendationsView: View {
     @ObservedObject var store: RecommendationsStore
     @ObservedObject var flow: CleanFlow
     @Binding var focusGroup: String?
+    /// true = secțiunea Dezvoltator (doar ținte cu `tech`); false = Recomandări (restul).
+    let dev: Bool
     @State private var group: String?
     @State private var filter: RiskFilter = .all
+    @AppStorage(Profile.techsKey) private var techsRaw = ""
 
     private func visible(_ t: CleanTarget) -> Bool {
+        guard t.isDev == dev else { return false }
         switch filter {
-        case .all: true
-        case .safe: t.risk == .safe
-        case .care: t.risk != .safe
+        case .all: return true
+        case .safe: return t.risk == .safe
+        case .care: return t.risk != .safe
         }
     }
 
@@ -506,6 +542,14 @@ struct RecommendationsView: View {
                 }
                 .pickerStyle(.segmented).labelsHidden().frame(width: 260)
                 Spacer()
+                if dev {
+                    let techs = Tech.allCases.filter(Profile.decode(techsRaw).contains)
+                    Text(techs.isEmpty ? tr("Nicio tehnologie în profil") : techs.map(\.title).joined(separator: " · "))
+                        .font(.system(size: 12)).foregroundStyle(Theme.muted).lineLimit(1).truncationMode(.tail)
+                        .frame(maxWidth: 420, alignment: .trailing)
+                    Button("Editează profilul") { NotificationCenter.default.post(name: .openCleanerSettings, object: nil) }
+                        .buttonStyle(.plain).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Theme.accentText)
+                }
             }
             .padding(.horizontal, 28).padding(.bottom, 12)
             Rectangle().fill(Theme.line).frame(height: 1)
@@ -647,7 +691,9 @@ struct RecommendationsView: View {
     }
 
     private var footer: some View {
-        let sel = store.selectedTargets
+        // Doar lista afișată: selecția din cealaltă secțiune rămâne neatinsă.
+        let sel = store.selectedTargets(dev: dev)
+        let scope = Set(store.targets.filter { $0.isDev == dev }.map(\.id))
         let bytes = sel.reduce(Int64(0)) { $0 + (store.sizes[$1.id] ?? 0) }
         let care = sel.filter { $0.risk != .safe }.count
         return HStack(spacing: 12) {
@@ -657,9 +703,9 @@ struct RecommendationsView: View {
                     .font(.system(size: 12)).foregroundStyle(Theme.muted)
             }
             Spacer()
-            Button("Doar cele sigure") { store.selected = Set(store.safeIDs) }
+            Button("Doar cele sigure") { store.selected = store.selected.subtracting(scope).union(store.safeIDs(dev: dev)) }
                 .buttonStyle(SecondaryButtonStyle())
-            Button("Deselectează") { store.selected = [] }
+            Button("Deselectează") { store.selected.subtract(scope) }
                 .buttonStyle(SecondaryButtonStyle())
                 .disabled(sel.isEmpty)
             Button("Curăță \(Fmt.bytes(bytes))") { flow.start(ids: sel.map(\.id)) }
@@ -973,6 +1019,10 @@ struct OpenSettingsButton<Label: View>: View {
 }
 
 struct SettingsPage: View {
+    @ObservedObject var update: UpdateStore
+    @AppStorage(Profile.devModeKey) private var devMode = false
+    @AppStorage(Profile.techsKey) private var techsRaw = ""
+    @AppStorage(UpdateStore.autoCheckKey) private var autoUpdate = true
     @State private var language = AppLanguage.current
     @State private var languageChanged = false
     @State private var atLogin = LoginItem.enabled
@@ -1014,6 +1064,37 @@ struct SettingsPage: View {
                         .toggleStyle(.switch).labelsHidden().tint(Theme.accentFill)
                     }
                 }
+                group("PROFIL") {
+                    row("Sunt dezvoltator", Text("Adaugă secțiunea Dezvoltator: cache-uri, build-uri și dependențe ale uneltelor de programare. Oprit, acestea nu se mai caută.")) {
+                        Toggle("", isOn: Binding(get: { devMode }, set: { on in
+                            devMode = on
+                            profileChanged()
+                        }))
+                        .toggleStyle(.switch).labelsHidden().tint(Theme.accentFill)
+                    }
+                    if devMode {
+                        divider
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Tehnologii").fontWeight(.semibold)
+                                    Text("Se caută doar ce ține de tehnologiile alese. Au fost detectate automat din ce e instalat.")
+                                        .font(.system(size: 12.5)).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true)
+                                }
+                                Spacer()
+                                Button("Detectează din nou") {
+                                    techsRaw = Profile.encode(Profile.detected())
+                                    profileChanged()
+                                }
+                                .buttonStyle(SecondaryButtonStyle(height: 32))
+                            }
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 168), spacing: 8)], alignment: .leading, spacing: 8) {
+                                ForEach(Tech.allCases) { t in techChip(t) }
+                            }
+                        }
+                        .padding(.horizontal, 18).padding(.vertical, 14)
+                    }
+                }
                 group("SCANARE ȘI NOTIFICĂRI") {
                     row("Rescanează automat", Text("Rulează în fundal cât timp iconița e în bara de meniu.")) {
                         Picker("", selection: $rescanHours) {
@@ -1050,8 +1131,18 @@ struct SettingsPage: View {
                     }
                 }
                 group("DESPRE") {
-                    row("Cleaner MacOS", Text(tr("Versiunea \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"))"))) {
-                        EmptyView()
+                    row("Cleaner MacOS", Text(tr("Versiunea \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"))") + updateStatus)) {
+                        Button("Caută actualizări") { Task { await update.check(manual: true) } }
+                            .buttonStyle(SecondaryButtonStyle(height: 32))
+                            .disabled(update.busy)
+                    }
+                    if let r = update.release {
+                        divider
+                        updateRow(r)
+                    }
+                    divider
+                    row("Caută actualizări automat", Text("O dată pe zi, din GitHub Releases. Instalarea pornește doar când o confirmi.")) {
+                        Toggle("", isOn: $autoUpdate).toggleStyle(.switch).labelsHidden().tint(Theme.accentFill)
                     }
                 }
             }
@@ -1066,6 +1157,76 @@ struct SettingsPage: View {
     }
 
     private var divider: some View { Rectangle().fill(Theme.lineSoft).frame(height: 1) }
+
+    private func profileChanged() {
+        NotificationCenter.default.post(name: .profileChanged, object: nil)
+    }
+
+    private func techChip(_ t: Tech) -> some View {
+        let techs = Profile.decode(techsRaw)
+        let on = techs.contains(t)
+        return Button {
+            techsRaw = Profile.encode(on ? techs.subtracting([t]) : techs.union([t]))
+            profileChanged()
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: on ? "checkmark.circle.fill" : "circle").font(.system(size: 13, weight: .medium))
+                Text(t.title).font(.system(size: 12.5, weight: .medium)).lineLimit(1).minimumScaleFactor(0.85)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10).frame(height: 32)
+            .background(RoundedRectangle(cornerRadius: 8).fill(on ? Theme.safeBg : Theme.ground))
+            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(on ? Theme.safeBg : Theme.line))
+            .foregroundStyle(on ? Theme.safeFg : Theme.muted)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(on ? .isSelected : [])
+    }
+
+    /// Completează rândul cu versiunea: rezultatul ultimei verificări.
+    private var updateStatus: String {
+        switch update.state {
+        case .checking: " · " + tr("Se verifică…")
+        case .upToDate: " · " + tr("Ai ultima versiune.")
+        case .failed(let m) where update.release == nil: "\n" + m
+        default: ""
+        }
+    }
+
+    @ViewBuilder
+    private func updateRow(_ r: AppRelease) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Versiunea \(r.version) e disponibilă").fontWeight(.semibold)
+                    switch update.state {
+                    case .downloading(_, let p):
+                        ProgressView(value: p).frame(maxWidth: 260)
+                    case .installing:
+                        Text("Se instalează; aplicația repornește singură.").font(.system(size: 12.5)).foregroundStyle(Theme.muted)
+                    case .failed(let m):
+                        Text(m).font(.system(size: 12.5)).foregroundStyle(Theme.danger).fixedSize(horizontal: false, vertical: true)
+                    default:
+                        Text("Se descarcă, i se verifică semnătura, apoi aplicația repornește.")
+                            .font(.system(size: 12.5)).foregroundStyle(Theme.muted)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Button("Sari peste") { update.skip(r) }
+                    .buttonStyle(SecondaryButtonStyle(height: 32)).disabled(update.busy)
+                Button("Pagina versiunii") { update.openPage(r) }
+                    .buttonStyle(SecondaryButtonStyle(height: 32))
+                Button("Instalează și repornește") { update.install(r) }
+                    .buttonStyle(PrimaryButtonStyle(height: 32)).disabled(update.busy)
+            }
+            if !r.notes.isEmpty {
+                Text(r.notes).font(.system(size: 12.5)).foregroundStyle(Theme.muted)
+                    .lineLimit(8).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+            }
+        }
+        .padding(.horizontal, 18).padding(.vertical, 14)
+    }
 
     private func group<Content: View>(_ title: LocalizedStringKey, @ViewBuilder _ content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 8) {

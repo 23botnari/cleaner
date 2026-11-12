@@ -14,7 +14,7 @@ extension Targets {
         guard let brew = brewCLI else { return [] }
         let r = Shell.run(brew, ["cleanup", "-n", "-s", "--prune=all"], timeout: 120)
         return [CleanTarget(
-            id: "brew", group: "Dezvoltare", name: tr("Homebrew: versiuni vechi și descărcări"),
+            id: "brew", tech: .tools, group: "Dezvoltare", name: tr("Homebrew: versiuni vechi și descărcări"),
             desc: tr("Rulează „brew cleanup -s --prune=all”: șterge versiunile vechi ale pachetelor și kit-urile descărcate. Versiunile curente rămân."),
             cmds: [[brew, "cleanup", "-s", "--prune=all"]],
             fixedSize: parseBrewFree(r.out + r.err))]
@@ -35,25 +35,25 @@ extension Targets {
         var L: [CleanTarget] = []
         if let go = goCLI {
             // Modulele Go sunt read-only: le șterge doar `go clean`, nu rm.
-            L.append(CleanTarget(id: "gomod", group: g, name: tr("Go: module descărcate"),
+            L.append(CleanTarget(id: "gomod", tech: .go, group: g, name: tr("Go: module descărcate"),
                                  desc: tr("Rulează „go clean -modcache”. Modulele se redescarcă la următorul go build."),
                                  cmds: [[go, "clean", "-modcache"]],
                                  sizePaths: [Paths.hp("go", "pkg", "mod")]))
         }
         return L + [
-            CleanTarget(id: "cargo", group: g, name: tr("Rust: cache Cargo"),
+            CleanTarget(id: "cargo", tech: .rust, group: g, name: tr("Rust: cache Cargo"),
                         desc: tr("Crate-uri descărcate și surse dezarhivate. Se redescarcă la următorul cargo build. Indexul registrului rămâne."),
                         procs: ["=cargo"], appName: "cargo",
                         resolve: { Paths.existing([Paths.hp(".cargo", "registry", "cache"), Paths.hp(".cargo", "registry", "src"),
                                                    Paths.hp(".cargo", "git", "checkouts")]) }),
-            CleanTarget(id: "gobuild", group: g, name: tr("Go: cache de build"),
+            CleanTarget(id: "gobuild", tech: .go, group: g, name: tr("Go: cache de build"),
                         desc: tr("Rezultate de compilare refolosite. Se refac la următorul go build."),
                         resolve: { Paths.existing([Paths.join(C, "go-build")]) }),
-            CleanTarget(id: "maven", group: g, name: tr("Maven: depozit local (~/.m2)"),
+            CleanTarget(id: "maven", tech: .java, group: g, name: tr("Maven: depozit local (~/.m2)"),
                         desc: tr("Dependențe Java descărcate. Se redescarcă la următorul build. Pachetele publicate doar local (mvn install) trebuie reconstruite."),
                         risk: .care, procs: ["org.codehaus.plexus.classworlds"], appName: "Maven",
                         resolve: { Paths.existing([Paths.hp(".m2", "repository")]) }),
-            CleanTarget(id: "jetbrains", group: g, name: tr("JetBrains / Android Studio: cache și log-uri"),
+            CleanTarget(id: "jetbrains", tech: .tools, group: g, name: tr("JetBrains / Android Studio: cache și log-uri"),
                         desc: tr("Indexuri și log-uri ale IDE-urilor. Setările, pluginurile și proiectele rămân; la prima deschidere IDE-ul reindexează."),
                         procs: jetBrainsProcs, appName: tr("IDE-urile JetBrains / Android Studio"),
                         resolve: {
@@ -61,25 +61,60 @@ extension Targets {
                                 + (Paths.children(Paths.join(C, "Google")) + Paths.children(Paths.hp("Library", "Logs", "Google")))
                                     .filter { ($0 as NSString).lastPathComponent.hasPrefix("AndroidStudio") }
                         }),
-            CleanTarget(id: "yarn", group: g, name: tr("Yarn: cache"),
+            CleanTarget(id: "yarn", tech: .js, group: g, name: tr("Yarn: cache"),
                         desc: tr("Pachete descărcate de Yarn. Se redescarcă la următorul yarn install."),
                         resolve: { Paths.existing([Paths.join(C, "Yarn"), Paths.hp(".yarn", "berry", "cache")]) }),
-            CleanTarget(id: "bun", group: g, name: tr("Bun: cache"),
+            CleanTarget(id: "bun", tech: .js, group: g, name: tr("Bun: cache"),
                         desc: tr("Pachete descărcate de Bun. Se redescarcă la următorul bun install."),
                         resolve: { Paths.existing([Paths.hp(".bun", "install", "cache")]) }),
-            CleanTarget(id: "cocoapods", group: g, name: tr("CocoaPods: cache"),
+            CleanTarget(id: "cocoapods", tech: .apple, group: g, name: tr("CocoaPods: cache"),
                         desc: tr("Pod-uri descărcate. Se redescarcă la următorul pod install."),
                         resolve: { Paths.existing([Paths.join(C, "CocoaPods")]) }),
-            CleanTarget(id: "pip", group: g, name: tr("Python: cache pip / uv"),
+            CleanTarget(id: "pip", tech: .python, group: g, name: tr("Python: cache pip / uv"),
                         desc: tr("Pachete Python descărcate. Se redescarcă la următoarea instalare."),
                         resolve: { Paths.existing([Paths.join(C, "pip"), Paths.hp(".cache", "uv"), Paths.join(C, "uv")]) }),
-            CleanTarget(id: "metro", group: g, name: tr("React Native / Expo: cache Metro"),
+            CleanTarget(id: "metro", tech: .js, group: g, name: tr("React Native / Expo: cache Metro"),
                         desc: tr("Cache-ul bundler-ului Metro din folderul temporar. Se reface la următorul start (echivalent cu --clear)."),
                         procs: ["expo start", "react-native start", "@expo/cli"], appName: tr("serverul Metro / Expo"),
                         resolve: { Paths.children(tmp).filter { p in
                             let n = (p as NSString).lastPathComponent
                             return n.hasPrefix("metro-") || n.hasPrefix("haste-map-") || n.hasPrefix("react-native-packager-cache-")
                         } }),
+            CleanTarget(id: "testbrowsers", tech: .js, group: g, name: tr("Browsere de test (Playwright, Cypress, Puppeteer)"),
+                        desc: tr("Browserele descărcate pentru teste automate. Se descarcă din nou la următoarea instalare sau rulare."),
+                        resolve: { Paths.existing([Paths.join(C, "ms-playwright"), Paths.join(C, "Cypress"), Paths.hp(".cache", "puppeteer")]) }),
+            CleanTarget(id: "nodetooling", tech: .js, group: g, name: tr("Node: cache Electron, node-gyp, TypeScript, Prisma"),
+                        desc: tr("Binare și tipuri descărcate de uneltele Node. Se redescarcă la nevoie."),
+                        resolve: { Paths.existing([Paths.join(C, "electron"), Paths.join(C, "electron-builder"), Paths.join(C, "node-gyp"),
+                                                   Paths.join(C, "typescript"), Paths.hp(".cache", "prisma")]) }),
+            CleanTarget(id: "deno", tech: .js, group: g, name: tr("Deno: cache"),
+                        desc: tr("Module descărcate de Deno. Se redescarcă la următoarea rulare."),
+                        resolve: { Paths.existing([Paths.join(C, "deno")]) }),
+            CleanTarget(id: "composer", tech: .php, group: g, name: tr("PHP: cache Composer"),
+                        desc: tr("Pachete PHP descărcate. Se redescarcă la următorul composer install."),
+                        resolve: { Paths.existing([Paths.join(C, "composer"), Paths.hp(".composer", "cache")]) }),
+            CleanTarget(id: "gems", tech: .ruby, group: g, name: tr("Ruby: cache gem-uri"),
+                        desc: tr("Arhivele gem-urilor descărcate. Gem-urile instalate rămân."),
+                        resolve: { Paths.existing(Paths.children(Paths.hp(".gem", "ruby")).map { Paths.join($0, "cache") }
+                            + [Paths.hp(".bundle", "cache")]) }),
+            CleanTarget(id: "nuget", tech: .dotnet, group: g, name: tr(".NET: pachete NuGet"),
+                        desc: tr("Pachetele NuGet descărcate. Se redescarcă la următorul dotnet restore."),
+                        risk: .care,
+                        resolve: { Paths.existing([Paths.hp(".nuget", "packages")]) }),
+            CleanTarget(id: "pubcache", tech: .flutter, group: g, name: tr("Flutter / Dart: pachete pub"),
+                        desc: tr("Pachetele descărcate de pub. Se redescarcă la următorul flutter pub get; uneltele instalate cu „dart pub global activate” trebuie reactivate."),
+                        risk: .care,
+                        resolve: { Paths.existing([Paths.hp(".pub-cache")]) }),
+            CleanTarget(id: "xcodecache", tech: .apple, group: g, name: tr("Xcode: cache și Previews"),
+                        desc: tr("Cache-ul Xcode și simulatoarele folosite de SwiftUI Previews. Se refac automat."),
+                        procs: ["Xcode.app/Contents/MacOS/Xcode"], appName: "Xcode",
+                        resolve: { Paths.existing([Paths.join(C, "com.apple.dt.Xcode"),
+                                                   Paths.hp("Library", "Developer", "Xcode", "UserData", "Previews")]) }),
+            CleanTarget(id: "cursor", tech: .tools, group: g, name: tr("Cursor: cache"),
+                        desc: tr("Cache-uri și log-uri. Setările, extensiile și proiectele nu sunt atinse."),
+                        procs: ["Cursor.app/Contents/MacOS"], appName: "Cursor",
+                        resolve: { Paths.existing(["Cache", "CachedData", "CachedExtensionVSIXs", "Code Cache", "GPUCache", "logs"]
+                            .map { Paths.hp("Library", "Application Support", "Cursor", $0) }) }),
         ]
     }
 
@@ -88,7 +123,7 @@ extension Targets {
         var L: [CleanTarget] = []
         // Ollama împarte blob-urile între modele: doar tot folderul se poate șterge sigur din afară.
         L.append(CleanTarget(
-            id: "ollama", group: g, name: tr("Ollama: toate modelele"),
+            id: "ollama", tech: .ai, group: g, name: tr("Ollama: toate modelele"),
             desc: tr("Modelele descărcate cu ollama pull. Se descarcă din nou la nevoie (adesea câțiva GB fiecare)."),
             risk: .care, procs: ["=ollama", "Ollama.app/Contents/MacOS"], appName: tr("Ollama (inclusiv din bara de meniu)"),
             resolve: { Paths.existing([Paths.hp(".ollama", "models")]) }))
@@ -97,7 +132,7 @@ extension Targets {
             for pub in Paths.children(root) where Paths.isDir(pub) {
                 for model in Paths.children(pub) where Paths.isDir(model) {
                     L.append(CleanTarget(
-                        id: "lmstudio:" + model, group: g, name: tr("LM Studio: \(Paths.relative(model, to: root))"),
+                        id: "lmstudio:" + model, tech: .ai, group: g, name: tr("LM Studio: \(Paths.relative(model, to: root))"),
                         desc: tr("Model descărcat în LM Studio. Se descarcă din nou din tab-ul Discover."),
                         risk: .care, procs: ["LM Studio.app/Contents/MacOS"], appName: "LM Studio",
                         resolve: { Paths.existing([model]) }))
@@ -112,7 +147,7 @@ extension Targets {
                 .first(where: { n.hasPrefix($0.key) }) else { continue }
             let name = n.dropFirst(kind.key.count).replacingOccurrences(of: "--", with: "/")
             L.append(CleanTarget(
-                id: "hf:" + d, group: g, name: tr("Hugging Face: \(name)"),
+                id: "hf:" + d, tech: .ai, group: g, name: tr("Hugging Face: \(name)"),
                 desc: tr("\(kind.value) din cache-ul Hugging Face. Se descarcă din nou la prima folosire."),
                 risk: .care,
                 resolve: { Paths.existing([d]) }))

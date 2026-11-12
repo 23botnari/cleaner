@@ -64,6 +64,19 @@ final class RecommendationsStore: ObservableObject {
 
     var maxSize: Int64 { max(1, sizes.values.max() ?? 1) }
 
+    // Aceleași valori, dar doar pentru una din cele două liste: Dezvoltator (dev) sau Recomandări.
+
+    func reclaimable(dev: Bool) -> Int64 {
+        targets.reduce(0) { $0 + ($1.isDev == dev && !$1.overlap ? (sizes[$1.id] ?? 0) : 0) }
+    }
+
+    func safeIDs(dev: Bool) -> [String] {
+        let scope = Set(targets.filter { $0.isDev == dev }.map(\.id))
+        return safeIDs.filter(scope.contains)
+    }
+
+    func selectedTargets(dev: Bool) -> [CleanTarget] { selectedTargets.filter { $0.isDev == dev } }
+
     func refreshDisk() {
         let url = URL(fileURLWithPath: Paths.home)
         if let v = try? url.resourceValues(forKeys: [.volumeTotalCapacityKey, .volumeAvailableCapacityForImportantUsageKey]) {
@@ -87,16 +100,23 @@ final class RecommendationsStore: ObservableObject {
         done = []
         selected = []
         refreshDisk()
+        // Ce nu e în profil nu se caută deloc (xcrun, brew, docker și parcurgerea proiectelor sunt lente).
+        let techs = Profile.active
         Task {
             let found = await offMain {
-                (Targets.staticTargets() + Targets.claudeTargets() + Targets.dockerTargets() + Targets.simRuntimeTargets() + Targets.unavailableSimTargets() + Targets.androidTargets()
-                    + Targets.homebrewTargets() + Targets.devCacheTargets() + Targets.iosDeviceTargets() + Targets.downloadsTargets()
-                    + Targets.timeMachineTargets() + Targets.browserTargets() + Targets.aiModelTargets()).filter(\.isVisible)
+                func on(_ t: Tech, _ make: () -> [CleanTarget]) -> [CleanTarget] { techs.contains(t) ? make() : [] }
+                var all = Targets.staticTargets() + Targets.iosDeviceTargets() + Targets.downloadsTargets()
+                    + Targets.timeMachineTargets() + Targets.browserTargets()
+                if !techs.isEmpty { all += Targets.devCacheTargets() }
+                all += on(.claude, Targets.claudeTargets) + on(.docker, Targets.dockerTargets)
+                    + on(.apple) { Targets.simRuntimeTargets() + Targets.unavailableSimTargets() }
+                    + on(.android, Targets.androidTargets) + on(.tools, Targets.homebrewTargets) + on(.ai, Targets.aiModelTargets)
+                return all.filter { ($0.tech.map(techs.contains) ?? true) && $0.isVisible }
             }
             guard gen == generation else { return }
             targets = found
             scanning = false
-            let nmTask = Task { await offMain { Targets.projectArtifactTargets() + Targets.duplicateTargets() } }
+            let nmTask = Task { await offMain { Targets.projectArtifactTargets(techs: techs) + Targets.duplicateTargets() } }
             await computeSizes(found, gen: gen)
             let nm = await nmTask.value
             guard gen == generation else { return }

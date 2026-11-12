@@ -1,5 +1,10 @@
 #!/bin/zsh
 # Compilează „Cleaner MacOS”, asamblează .app, semnează și instalează în ~/Applications.
+#   --install  instalează în ~/Applications
+#   --dmg      build/CleanerMacOS.dmg, semnat cu identitatea de dezvoltare
+#   --release  DMG pentru publicare: semnat cu „Developer ID Application” (dacă există în Keychain)
+#              și notarizat când NOTARY_PROFILE numește un profil salvat cu
+#              `xcrun notarytool store-credentials`.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -14,6 +19,20 @@ for CANDIDATE in "$APP_NAME" "Cleaner" "Curățenie Mac"; do
   INSTALLED_ID="$(codesign -dvv "$HOME/Applications/$CANDIDATE.app" 2>&1 | sed -n 's/^Authority=\(Apple Development: .*\)/\1/p' | head -1 || true)"
 done
 SIGN_ID="${SIGN_ID:-${INSTALLED_ID:-$(security find-identity -v -p codesigning | sed -n 's/.*"\(Apple Development: .*\)"/\1/p' | head -1)}}"
+
+MODE="${1:-}"
+TIMESTAMP="--timestamp=none"
+if [[ "$MODE" == "--release" ]]; then
+  # Actualizările se instalează doar dacă sunt semnate cu aceeași identitate ca versiunea instalată:
+  # păstrează aceeași identitate de la un release la altul.
+  DEVID="$(security find-identity -v -p codesigning | sed -n 's/.*"\(Developer ID Application: .*\)"/\1/p' | head -1)"
+  if [[ -n "$DEVID" ]]; then
+    SIGN_ID="$DEVID"
+    TIMESTAMP="--timestamp"
+  else
+    echo "Atenție: nu există „Developer ID Application” în Keychain; semnez cu '$SIGN_ID'. Gatekeeper va avertiza la prima deschidere."
+  fi
+fi
 
 # Command Line Tools pe macOS 27 nu au pluginul SwiftUIMacros cerut de SDK-ul 27: compilăm cu SDK-ul 26.
 CLT_SDKS="/Library/Developer/CommandLineTools/SDKs"
@@ -39,14 +58,14 @@ fi
 cp "$BUILD_DIR/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
 if [[ -n "$SIGN_ID" ]] && security find-identity -v -p codesigning | grep -qF "$SIGN_ID"; then
-  codesign --force --options runtime --timestamp=none --entitlements Resources/CuratenieMac.entitlements --sign "$SIGN_ID" "$APP"
+  codesign --force --options runtime $TIMESTAMP --entitlements Resources/CuratenieMac.entitlements --sign "$SIGN_ID" "$APP"
 else
   echo "Identitatea '$SIGN_ID' lipsește; semnez ad-hoc (Full Disk Access se va cere din nou după fiecare build)."
   codesign --force --sign - "$APP"
 fi
 codesign --verify --strict "$APP"
 
-if [[ "${1:-}" == "--install" ]]; then
+if [[ "$MODE" == "--install" ]]; then
   mkdir -p "$HOME/Applications"
   pkill -x Cleaner 2>/dev/null || true
   rm -rf "$HOME/Applications/$APP_NAME.app"
@@ -61,7 +80,7 @@ if [[ "${1:-}" == "--install" ]]; then
   echo "Instalat: $HOME/Applications/$APP_NAME.app"
 fi
 
-if [[ "${1:-}" == "--dmg" ]]; then
+if [[ "$MODE" == "--dmg" || "$MODE" == "--release" ]]; then
   STAGE="$BUILD_DIR/dmg"
   rm -rf "$STAGE" "$BUILD_DIR/CleanerMacOS.dmg"
   mkdir -p "$STAGE"
@@ -69,5 +88,15 @@ if [[ "${1:-}" == "--dmg" ]]; then
   ln -s /Applications "$STAGE/Applications"
   hdiutil create -volname "$APP_NAME" -srcfolder "$STAGE" -ov -format UDZO "$BUILD_DIR/CleanerMacOS.dmg" >/dev/null
   rm -rf "$STAGE"
+  if [[ "$MODE" == "--release" ]]; then
+    DMG="$BUILD_DIR/CleanerMacOS.dmg"
+    if [[ "$TIMESTAMP" == "--timestamp" ]]; then codesign --force --timestamp --sign "$SIGN_ID" "$DMG"; fi
+    if [[ -n "${NOTARY_PROFILE:-}" ]]; then
+      xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait
+      xcrun stapler staple "$DMG"
+    else
+      echo "NOTARY_PROFILE nu e setat: DMG-ul nu e notarizat."
+    fi
+  fi
   echo "DMG: $PWD/$BUILD_DIR/CleanerMacOS.dmg"
 fi

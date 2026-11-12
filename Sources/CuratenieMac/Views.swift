@@ -9,14 +9,16 @@ struct CuratenieMacApp: App {
     // În App, nu în fereastră: iconița din bara de meniu le folosește și cu fereastra închisă.
     @StateObject private var rec = RecommendationsStore()
     @StateObject private var left = LeftoversStore()
+    @StateObject private var update = UpdateStore()
 
     init() {
         AppLanguage.applyDefaultOnce()
+        Profile.detectOnce()
     }
 
     var body: some Scene {
         WindowGroup("Cleaner MacOS", id: "main") {
-            ContentView(rec: rec, left: left)
+            ContentView(rec: rec, left: left, update: update)
                 .frame(minWidth: 1120, minHeight: 640)
         }
         .defaultSize(width: 1180, height: 780)
@@ -31,9 +33,9 @@ struct CuratenieMacApp: App {
         }
 
         MenuBarExtra {
-            MenuBarPanel(rec: rec, left: left)
+            MenuBarPanel(rec: rec, left: left, update: update)
         } label: {
-            MenuBarLabel(rec: rec, left: left)
+            MenuBarLabel(rec: rec, left: left, update: update)
         }
         .menuBarExtraStyle(.window)
 
@@ -254,6 +256,7 @@ enum DiskLevel {
 struct MenuBarLabel: View {
     @ObservedObject var rec: RecommendationsStore
     @ObservedObject var left: LeftoversStore
+    @ObservedObject var update: UpdateStore
     private let tick = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
     @State private var lastLevel: DiskLevel = .unknown
     @State private var wasLow = false
@@ -287,9 +290,11 @@ struct MenuBarLabel: View {
         .task {
             rec.scanIfNeeded()
             left.scanIfNeeded()
+            update.checkIfDue()
         }
         .onReceive(tick) { _ in
             rec.refreshDisk()
+            update.checkIfDue()
             // Rescanare la 6 ore, ca „se poate elibera” din notificare să fie actual.
             let hours = Prefs.rescanHours
             if hours > 0, !rec.scanning, let last = rec.lastScan, Date().timeIntervalSince(last) > Double(hours) * 3600 {
@@ -309,6 +314,7 @@ struct MenuBarLabel: View {
 struct MenuBarPanel: View {
     @ObservedObject var rec: RecommendationsStore
     @ObservedObject var left: LeftoversStore
+    @ObservedObject var update: UpdateStore
     @Environment(\.openWindow) private var openWindow
     @State private var atLogin = LoginItem.enabled
 
@@ -333,6 +339,12 @@ struct MenuBarPanel: View {
                 atLogin = LoginItem.enabled
             }))
             .toggleStyle(.checkbox).font(.callout)
+            if let r = update.release {
+                OpenSettingsButton {
+                    Label(tr("Versiunea \(r.version) e disponibilă"), systemImage: "arrow.down.circle.fill")
+                }
+                .buttonStyle(.link).font(.callout)
+            }
             Divider()
             HStack {
                 Button("Deschide Cleaner MacOS") {
