@@ -482,8 +482,7 @@ struct LeftoversView: View {
                     Text("Nimic nu se șterge direct: vezi întâi comenzile exacte, apoi totul se mută la Coș (după „launchctl bootout” pentru serviciile de pornire).")
                         .font(.system(size: 13)).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true)
                     if store.scanning {
-                        HStack { ProgressView().controlSize(.small); Text("Caut resturi…").foregroundStyle(Theme.muted) }
-                            .frame(maxWidth: .infinity).padding(.top, 40)
+                        SkeletonRows(count: 6, label: tr("Caut resturi…")).frame(height: 6 * 58 + 40)
                     } else if store.findings.isEmpty {
                         Text("Nu am găsit resturi.").foregroundStyle(Theme.muted).frame(maxWidth: .infinity).padding(.top, 40)
                     }
@@ -496,11 +495,14 @@ struct LeftoversView: View {
             Rectangle().fill(Theme.line).frame(height: 1)
             footer
         }
-        .sheet(isPresented: Binding(get: { !preview.isEmpty }, set: { if !$0 { preview = [] } })) {
+        .appSheet(isPresented: Binding(get: { !preview.isEmpty }, set: { if !$0 { preview = [] } })) {
             LeftoverPreviewSheet(findings: preview) { errors in
                 let done = preview
                 preview = []
                 guard let errors else { return }
+                HistoryStore.shared.record(.leftovers, title: done.count == 1 ? done[0].title : tr("\(done.count) resturi mutate la Coș"),
+                                           detail: done.count == 1 ? "" : done.prefix(4).map(\.title).joined(separator: ", "),
+                                           bytes: errors.isEmpty ? done.reduce(Int64(0)) { $0 + ($1.size ?? 0) } : 0, trashed: true)
                 message = errors.isEmpty
                     ? (tr("Mutat la Coș"), done.count == 1 ? tr("„\(done[0].title)” a fost mutat la Coș.")
                         : tr("\(done.count) resturi au fost mutate la Coș."))
@@ -509,9 +511,7 @@ struct LeftoversView: View {
                 store.scan()
             }
         }
-        .alert(message?.title ?? "", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
-            Button("OK") { message = nil }
-        } message: { Text(message?.body ?? "") }
+        .appMessage($message)
     }
 
     private func section(_ kind: LeftoverKind, _ items: [LeftoverFinding]) -> some View {
@@ -528,6 +528,9 @@ struct LeftoversView: View {
                 Text(kind.title).font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.muted)
                 Spacer()
                 Text(items.count == 1 ? tr("1 rest") : tr("\(items.count) resturi")).font(.system(size: 12)).foregroundStyle(Theme.faint)
+            }
+            .togglesCheckbox(enabled: !ids.isEmpty) {
+                if on == ids.count { store.selected.subtract(ids) } else { store.selected.formUnion(ids) }
             }
             .padding(.horizontal, 18)
             VStack(spacing: 0) {
@@ -552,11 +555,14 @@ struct LeftoversView: View {
                 .accessibilityLabel(Text(f.title))
                 .padding(.top, 2)
             VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 8) {
-                    Text(f.title).fontWeight(.semibold)
-                    RiskMark(risk: f.risk)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        Text(f.title).fontWeight(.semibold)
+                        RiskMark(risk: f.risk)
+                    }
+                    Text(f.detail).font(.system(size: 13)).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true)
                 }
-                Text(f.detail).font(.system(size: 13)).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true)
+
                 ForEach(f.shown.prefix(6), id: \.self) { p in
                     Text(p).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(Theme.faint)
                         .lineLimit(1).truncationMode(.middle).textSelection(.enabled)
@@ -585,6 +591,9 @@ struct LeftoversView: View {
             .fixedSize()
         }
         .padding(.horizontal, 18).padding(.vertical, 14)
+        .togglesCheckbox(enabled: actionable) {
+            if store.selected.contains(f.id) { store.selected.remove(f.id) } else { store.selected.insert(f.id) }
+        }
     }
 
     private var footer: some View {

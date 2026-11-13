@@ -130,7 +130,7 @@ struct StartupView: View {
             }
             .padding(.horizontal, 28).padding(.bottom, 12)
             if store.loading && store.items.isEmpty {
-                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                SkeletonRows(icon: 10).padding(.horizontal, 28)
             } else {
                 ScrollView {
                     LazyVStack(spacing: 0) {
@@ -144,19 +144,19 @@ struct StartupView: View {
                 }
             }
         }
-        .alert(item: Binding(get: { confirm.map(IdentifiedStartup.init) }, set: { confirm = $0?.item })) { w in
-            let it = w.item
-            let enable = it.disabled
-            return Alert(
-                title: Text(enable ? tr("Activează „\(it.label)”?") : tr("Dezactivează „\(it.label)”?")),
-                message: Text((it.needsAdmin ? tr("Cere parola de administrator.\n\n") : "")
-                    + StartupScanner.commands(it, enable: enable).joined(separator: "\n")),
-                primaryButton: enable ? .default(Text("Activează")) { run(it) } : .destructive(Text("Dezactivează")) { run(it) },
-                secondaryButton: .cancel(Text("Anulează")))
-        }
-        .alert(message?.title ?? "", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
-            Button("OK") { message = nil }
-        } message: { Text(message?.body ?? "") }
+        .appDialog(isPresented: Binding(get: { confirm != nil }, set: { if !$0 { confirm = nil } }),
+                   title: { confirm.map { $0.disabled ? tr("Activează „\($0.label)”?") : tr("Dezactivează „\($0.label)”?") } ?? "" },
+                   message: {
+                       guard let it = confirm else { return "" }
+                       return (it.needsAdmin ? tr("Cere parola de administrator.\n\n") : "")
+                           + StartupScanner.commands(it, enable: it.disabled).joined(separator: "\n")
+                   },
+                   buttons: {
+                       guard let it = confirm else { return [.cancel()] }
+                       return [it.disabled ? DialogButton(title: tr("Activează"), kind: .primary) { run(it) }
+                                   : DialogButton(title: tr("Dezactivează"), kind: .destructive) { run(it) }, .cancel()]
+                   })
+        .appMessage($message)
     }
 
     @ViewBuilder
@@ -198,9 +198,4 @@ struct StartupView: View {
             if let err = await store.toggle(it) { message = (tr("Nu am putut schimba „\(it.label)”"), err) }
         }
     }
-}
-
-struct IdentifiedStartup: Identifiable {
-    let item: StartupItem
-    var id: String { item.id }
 }

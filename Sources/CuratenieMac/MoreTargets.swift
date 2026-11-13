@@ -115,7 +115,169 @@ extension Targets {
                         procs: ["Cursor.app/Contents/MacOS"], appName: "Cursor",
                         resolve: { Paths.existing(["Cache", "CachedData", "CachedExtensionVSIXs", "Code Cache", "GPUCache", "logs"]
                             .map { Paths.hp("Library", "Application Support", "Cursor", $0) }) }),
+            CleanTarget(id: "windsurf", tech: .tools, group: g, name: tr("Windsurf: cache"),
+                        desc: tr("Cache-uri și log-uri. Setările, extensiile și proiectele nu sunt atinse."),
+                        procs: ["Windsurf.app/Contents/MacOS"], appName: "Windsurf",
+                        resolve: { Paths.existing(["Cache", "CachedData", "CachedExtensionVSIXs", "Code Cache", "GPUCache", "logs"]
+                            .map { Paths.hp("Library", "Application Support", "Windsurf", $0) }) }),
+            CleanTarget(id: "zed", tech: .tools, group: g, name: tr("Zed: cache"),
+                        desc: tr("Cache-ul editorului Zed. Setările și extensiile rămân."),
+                        procs: ["Zed.app/Contents/MacOS"], appName: "Zed",
+                        resolve: { Paths.existing([Paths.join(C, "dev.zed.Zed"), Paths.join(C, "Zed")]) }),
+            CleanTarget(id: "pyextra", tech: .python, group: g, name: tr("Python: cache Poetry / Pipenv"),
+                        desc: tr("Pachete descărcate de Poetry și Pipenv. Se redescarcă la următoarea instalare. Mediile virtuale rămân."),
+                        resolve: { Paths.existing([Paths.join(C, "pypoetry", "cache"), Paths.join(C, "pypoetry", "artifacts"), Paths.join(C, "pipenv")]) }),
+            CleanTarget(id: "condapkgs", tech: .python, group: g, name: tr("Conda: pachete descărcate"),
+                        desc: tr("Arhivele și pachetele dezarhivate din care conda creează medii (echivalent cu „conda clean --all”). Mediile existente rămân, dar unele pot depinde de ele dacă ai activat legăturile simbolice."),
+                        risk: .care,
+                        resolve: { Paths.existing(["miniconda3", "anaconda3", "miniforge3", "mambaforge", ".conda"].map { Paths.hp($0, "pkgs") }) }),
+            CleanTarget(id: "ccache", tech: .cpp, group: g, name: tr("C / C++: ccache"),
+                        desc: tr("Rezultate de compilare refolosite de ccache. Se refac la următoarele build-uri (primul va fi mai lent)."),
+                        resolve: { Paths.existing([Paths.join(C, "ccache"), Paths.hp(".ccache"), Paths.hp(".cache", "ccache")]) }),
+            CleanTarget(id: "vcpkg", tech: .cpp, group: g, name: tr("C / C++: cache vcpkg"),
+                        desc: tr("Pachete binare compilate de vcpkg. Se recompilează la următoarea instalare."),
+                        resolve: { Paths.existing([Paths.hp(".cache", "vcpkg", "archives"), Paths.join(C, "vcpkg")]) }),
+            CleanTarget(id: "conan", tech: .cpp, group: g, name: tr("C / C++: pachete Conan"),
+                        desc: tr("Pachetele descărcate și compilate de Conan. Se refac la următorul conan install; pachetele create doar local (conan create) trebuie refăcute."),
+                        risk: .care,
+                        resolve: { Paths.existing([Paths.hp(".conan2", "p"), Paths.hp(".conan", "data")]) }),
+            CleanTarget(id: "sccache", tech: .rust, group: g, name: tr("Rust: sccache"),
+                        desc: tr("Rezultate de compilare refolosite de sccache. Se refac la următoarele build-uri."),
+                        procs: ["=sccache"], appName: "sccache",
+                        resolve: { Paths.existing([Paths.join(C, "Mozilla.sccache")]) }),
+            CleanTarget(id: "swiftpm", tech: .apple, group: g, name: tr("Swift Package Manager: cache"),
+                        desc: tr("Pachete Swift descărcate. Se redescarcă la următoarea rezolvare a dependențelor."),
+                        resolve: { Paths.existing([Paths.join(C, "org.swift.swiftpm"), Paths.hp("Library", "org.swift.swiftpm", "repositories")]) }),
+            CleanTarget(id: "jvmextra", tech: .java, group: g, name: tr("Scala / sbt: cache Ivy și Coursier"),
+                        desc: tr("Dependențe JVM descărcate de sbt, Mill și Coursier. Se redescarcă la următorul build."),
+                        resolve: { Paths.existing([Paths.hp(".ivy2", "cache"), Paths.join(C, "Coursier"), Paths.hp(".cache", "coursier")]) }),
+            CleanTarget(id: "konan", tech: .java, group: g, name: tr("Kotlin/Native: compilatoare și dependențe"),
+                        desc: tr("Toolchain-uri Kotlin/Native descărcate. Se redescarcă la următorul build multiplatform."),
+                        risk: .care,
+                        resolve: { Paths.existing([Paths.hp(".konan", "dependencies"), Paths.hp(".konan", "cache")]
+                            + Paths.children(Paths.hp(".konan")).filter { ($0 as NSString).lastPathComponent.hasPrefix("kotlin-native-prebuilt") }) }),
+            CleanTarget(id: "hex", tech: .elixir, group: g, name: tr("Elixir / Erlang: cache Hex și rebar3"),
+                        desc: tr("Pachete descărcate. Se redescarcă la următorul mix deps.get / rebar3 compile."),
+                        resolve: { Paths.existing([Paths.hp(".hex", "packages"), Paths.hp(".cache", "rebar3")]) }),
+            CleanTarget(id: "haskellcache", tech: .haskell, group: g, name: tr("Haskell: cache Cabal și GHCup"),
+                        desc: tr("Pachete și instalatoare descărcate. Se redescarcă la nevoie. Compilatoarele instalate rămân."),
+                        resolve: { Paths.existing([Paths.hp(".cabal", "packages"), Paths.hp(".ghcup", "cache"), Paths.hp(".ghcup", "tmp")]) }),
+            CleanTarget(id: "stacksnap", tech: .haskell, group: g, name: tr("Haskell: snapshot-uri Stack"),
+                        desc: tr("Pachetele compilate pentru fiecare snapshot Stackage. Se recompilează la următorul stack build (durează)."),
+                        risk: .care,
+                        resolve: { Paths.existing([Paths.hp(".stack", "snapshots")]) }),
+            CleanTarget(id: "othercaches", tech: .other, group: g, name: tr("Zig, Julia, OCaml: cache-uri"),
+                        desc: tr("Compilări și descărcări refolosite. Se refac la următoarea rulare."),
+                        resolve: { Paths.existing([Paths.hp(".cache", "zig"), Paths.join(C, "zig"), Paths.hp(".julia", "compiled"),
+                                                   Paths.hp(".opam", "download-cache")]) }),
+            CleanTarget(id: "renvcache", tech: .other, group: g, name: tr("R: cache renv"),
+                        desc: tr("Pachete R partajate între proiectele renv. Se reinstalează cu renv::restore()."),
+                        risk: .care,
+                        resolve: { Paths.existing([Paths.join(C, "org.R-project.R", "R", "renv")]) }),
+            CleanTarget(id: "unity", tech: .gamedev, group: g, name: tr("Unity: cache de pachete"),
+                        desc: tr("Pachetele descărcate de Unity Package Manager. Se redescarcă la deschiderea proiectelor."),
+                        procs: ["Unity.app/Contents/MacOS", "Unity Hub.app/Contents/MacOS"], appName: "Unity",
+                        resolve: { Paths.existing([Paths.hp("Library", "Unity", "cache"), Paths.join(C, "com.unity3d.UnityEditor")]) }),
+            CleanTarget(id: "unreal", tech: .gamedev, group: g, name: tr("Unreal: Derived Data Cache comun"),
+                        desc: tr("Date compilate partajate de proiectele Unreal. Se refac la deschidere (poate dura)."),
+                        procs: ["UnrealEditor"], appName: "Unreal Editor",
+                        resolve: { Paths.existing([Paths.hp("Library", "Application Support", "Epic", "UnrealEngine", "Common", "DerivedDataCache")]) }),
+            CleanTarget(id: "godot", tech: .gamedev, group: g, name: tr("Godot: cache"),
+                        desc: tr("Cache-ul editorului Godot. Se reface la următoarea deschidere."),
+                        procs: ["Godot.app/Contents/MacOS"], appName: "Godot",
+                        resolve: { Paths.existing([Paths.join(C, "Godot")]) }),
+            CleanTarget(id: "terraform", tech: .infra, group: g, name: tr("Terraform: cache de provideri"),
+                        desc: tr("Providerii descărcați în cache-ul comun. Se redescarcă la următorul terraform init."),
+                        resolve: { Paths.existing([Paths.hp(".terraform.d", "plugin-cache")]) }),
+            CleanTarget(id: "bazelisk", tech: .infra, group: g, name: tr("Bazel: versiuni descărcate de Bazelisk"),
+                        desc: tr("Binarele Bazel descărcate. Se redescarcă la nevoie."),
+                        resolve: { Paths.existing([Paths.join(C, "bazelisk"), Paths.hp(".cache", "bazelisk")]) }),
+            CleanTarget(id: "minikube", tech: .infra, group: g, name: tr("minikube: imagini descărcate"),
+                        desc: tr("Imagini și binare descărcate de minikube. Clusterele existente rămân."),
+                        resolve: { Paths.existing([Paths.hp(".minikube", "cache")]) }),
+            CleanTarget(id: "vagrant", tech: .infra, group: g, name: tr("Vagrant: box-uri"),
+                        desc: tr("Imaginile de bază ale mașinilor virtuale. Se descarcă din nou la următorul vagrant up; mașinile create din ele rămân."),
+                        risk: .care,
+                        resolve: { Paths.children(Paths.hp(".vagrant.d", "boxes")) }),
         ]
+    }
+
+    // MARK: - Versiuni vechi ale uneltelor
+
+    /// Versiunile instalate dintr-un manager (nvm, pyenv, rustup…): păstrez implicita și cea mai nouă, restul se pot șterge.
+    private static func versions(id: String, tech: Tech, tool: String, root: String, keep: Set<String> = [],
+                                 keepNewest: Bool = true, regen: String) -> [CleanTarget] {
+        let dirs = Paths.children(root).filter { Paths.isDir($0) && !Paths.isSymlink($0) && !($0 as NSString).lastPathComponent.hasPrefix(".") }
+        guard dirs.count > 1 else { return [] }
+        func name(_ p: String) -> String { (p as NSString).lastPathComponent }
+        var kept = Set(dirs.filter { keep.contains(name($0)) || keep.contains(Paths.realpath($0)) })
+        if keepNewest, let newest = dirs.max(by: { version(name($0)).compare(version(name($1)), options: .numeric) == .orderedAscending }) {
+            kept.insert(newest)
+        }
+        guard !kept.isEmpty else { return [] }
+        return dirs.filter { !kept.contains($0) }.sorted().map { d in
+            CleanTarget(
+                id: "ver:\(id):" + d, tech: tech, group: "Versiuni de unelte", name: "\(tool) \(name(d))",
+                desc: tr("Versiune mai veche, care nu e cea implicită. Proiectele care o cer explicit nu mai pornesc până o reinstalezi. \(regen)"),
+                risk: .care,
+                resolve: { Paths.existing([d]) })
+        }
+    }
+
+    private static func version(_ s: String) -> String { s.hasPrefix("v") ? String(s.dropFirst()) : s }
+
+    private static func firstLine(_ path: String) -> String? {
+        (try? String(contentsOfFile: path, encoding: .utf8))?
+            .split(whereSeparator: \.isNewline).first.map { $0.trimmingCharacters(in: .whitespaces) }
+    }
+
+    static func toolVersionTargets() -> [CleanTarget] {
+        var L: [CleanTarget] = []
+        // nvm: alias implicit „20”, „v20.11.0” sau „lts/*”.
+        let nvmRoot = Paths.hp(".nvm", "versions", "node")
+        if let alias = firstLine(Paths.hp(".nvm", "alias", "default")) {
+            let a = version(alias)
+            let keep = Set(Paths.children(nvmRoot).map { ($0 as NSString).lastPathComponent }
+                .filter { let v = version($0); return v == a || v.hasPrefix(a + ".") })
+            L += versions(id: "nvm", tech: .js, tool: "Node (nvm)", root: nvmRoot, keep: keep, regen: tr("Se reinstalează cu nvm install."))
+        } else {
+            L += versions(id: "nvm", tech: .js, tool: "Node (nvm)", root: nvmRoot, regen: tr("Se reinstalează cu nvm install."))
+        }
+        for base in [Paths.hp(".local", "share", "fnm"), Paths.hp("Library", "Application Support", "fnm"), Paths.hp(".fnm")] {
+            let def = Paths.realpath(Paths.join(base, "aliases", "default"))
+            let keep = Set(Paths.children(Paths.join(base, "node-versions")).filter { def.hasPrefix(Paths.realpath($0) + "/") || def == Paths.realpath($0) })
+            L += versions(id: "fnm", tech: .js, tool: "Node (fnm)", root: Paths.join(base, "node-versions"), keep: keep,
+                          regen: tr("Se reinstalează cu fnm install."))
+        }
+        var voltaKeep: Set<String> = []
+        if let data = FileManager.default.contents(atPath: Paths.hp(".volta", "tools", "user", "platform.json")),
+           let o = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let node = o["node"] as? [String: Any], let rt = node["runtime"] as? String {
+            voltaKeep.insert(rt)
+        }
+        L += versions(id: "volta", tech: .js, tool: "Node (Volta)", root: Paths.hp(".volta", "tools", "image", "node"), keep: voltaKeep,
+                      regen: tr("Se reinstalează cu volta install."))
+        L += versions(id: "pyenv", tech: .python, tool: "Python (pyenv)", root: Paths.hp(".pyenv", "versions"),
+                      keep: Set([firstLine(Paths.hp(".pyenv", "version"))].compactMap { $0 }), regen: tr("Se reinstalează cu pyenv install."))
+        L += versions(id: "rbenv", tech: .ruby, tool: "Ruby (rbenv)", root: Paths.hp(".rbenv", "versions"),
+                      keep: Set([firstLine(Paths.hp(".rbenv", "version"))].compactMap { $0 }), regen: tr("Se reinstalează cu rbenv install."))
+        // rustup: implicitul din settings.toml și toate canalele „stable-…” rămân; nightly / versiuni fixe vechi se pot șterge.
+        let rustRoot = Paths.hp(".rustup", "toolchains")
+        let settings = (try? String(contentsOfFile: Paths.hp(".rustup", "settings.toml"), encoding: .utf8)) ?? ""
+        let def = settings.split(separator: "\n").first { $0.hasPrefix("default_toolchain") }?
+            .split(separator: "\"").dropFirst().first.map(String.init)
+        let rustKeep = Set(Paths.children(rustRoot).map { ($0 as NSString).lastPathComponent }
+            .filter { n in n.hasPrefix("stable-") || (def.map { d in n == d || n.hasPrefix(d + "-") } ?? false) })
+        L += versions(id: "rustup", tech: .rust, tool: "Rust", root: rustRoot, keep: rustKeep, keepNewest: false,
+                      regen: tr("Se reinstalează cu rustup toolchain install."))
+        for cand in Paths.children(Paths.hp(".sdkman", "candidates")) where Paths.isDir(cand) {
+            let cur = Paths.realpath(Paths.join(cand, "current"))
+            L += versions(id: "sdkman", tech: .java, tool: "\((cand as NSString).lastPathComponent) (SDKMAN)", root: cand, keep: [cur],
+                          regen: tr("Se reinstalează cu sdk install."))
+        }
+        L += versions(id: "ndk", tech: .android, tool: "Android NDK", root: Paths.hp("Library", "Android", "sdk", "ndk"),
+                      regen: tr("Se reinstalează din Android Studio → SDK Manager."))
+        return L
     }
 
     static func aiModelTargets() -> [CleanTarget] {

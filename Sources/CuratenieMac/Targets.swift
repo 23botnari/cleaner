@@ -27,10 +27,17 @@ struct CleanTarget: Identifiable, Sendable {
     var overlap = false
     /// Se mută la Coș în loc să se șteargă (fișiere ale utilizatorului: descărcări, duplicate).
     var trash = false
+    /// E pe un disc extern: nu eliberează spațiu pe Mac, deci nu intră în totalul discului intern.
+    var external = false
     var resolve: @Sendable () -> [String] = { [] }
     var cmds: [[String]] = []
     var sizePaths: [String] = []
     var fixedSize: Int64? = nil
+    /// Folderul proiectului din care face parte (doar artefactele din proiecte), pentru vederea pe proiecte.
+    var project: String? = nil
+    /// Ce e, pe scurt (ex. „node_modules”, „build Next.js”).
+    var artifact: String? = nil
+    var lastActive: Date? = nil
 
     var isDev: Bool { tech != nil }
 
@@ -159,6 +166,16 @@ enum Targets {
             desc: tr("Golește Coșul definitiv. Ce e acolo nu mai poate fi recuperat."),
             risk: .care,
             resolve: { Paths.children(Paths.hp(".Trash")) }))
+        // Fiecare disc extern are Coșul lui; ce muți la Coș de pe el ocupă loc acolo până îl golești.
+        for v in Paths.externalVolumes() {
+            let bin = Paths.volumeTrash(v)
+            let volume = (v as NSString).lastPathComponent
+            L.append(CleanTarget(
+                id: "trash:" + v, group: g, name: tr("Coșul de pe \(volume)"),
+                desc: tr("Golește definitiv Coșul discului extern „\(volume)”. Eliberează spațiu pe acel disc, nu pe Mac. Ce e acolo nu mai poate fi recuperat."),
+                risk: .care, external: true,
+                resolve: { Paths.children(bin) }))
+        }
         return L
     }
 
@@ -353,6 +370,7 @@ enum Targets {
     }
 
     private static let jsMarker = ["package.json"]
+    private static let dotnetSuffixes = [".csproj", ".fsproj", ".vbproj"]
     private static let gradleMarkers = ["build.gradle", "build.gradle.kts"]
     private static let regenBuild = tr("Se reface la următorul build.")
 
@@ -387,8 +405,49 @@ enum Targets {
         Artifact(dir: "vendor", tech: .php, what: tr("dependențe Composer"), regen: tr("Se reinstalează cu composer install."),
                  markers: ["composer.json"], inside: ["autoload.php"]),
         Artifact(dir: "vendor", tech: .ruby, what: tr("gem-uri Bundler"), regen: tr("Se reinstalează cu bundle install."), markers: ["Gemfile"], sub: "bundle"),
-        Artifact(dir: "bin", tech: .dotnet, what: tr("build .NET"), regen: tr("Se recompilează la următorul dotnet build."), suffixes: [".csproj", ".fsproj", ".vbproj"]),
-        Artifact(dir: "obj", tech: .dotnet, what: tr("build .NET"), regen: tr("Se recompilează la următorul dotnet build."), suffixes: [".csproj", ".fsproj", ".vbproj"]),
+        Artifact(dir: "bin", tech: .dotnet, what: tr("build .NET"), regen: tr("Se recompilează la următorul dotnet build."), suffixes: dotnetSuffixes),
+        Artifact(dir: "obj", tech: .dotnet, what: tr("build .NET"), regen: tr("Se recompilează la următorul dotnet build."), suffixes: dotnetSuffixes),
+        // Java / Kotlin / Scala
+        Artifact(dir: "target", tech: .java, what: tr("build sbt"), regen: tr("Se recompilează la următorul sbt compile."), markers: ["build.sbt"]),
+        Artifact(dir: ".bloop", tech: .java, what: tr("cache Bloop"), regen: regenBuild, markers: ["build.sbt"]),
+        Artifact(dir: ".metals", tech: .java, what: tr("cache Metals"), regen: tr("Se reface la următoarea deschidere în editor."), markers: ["build.sbt"]),
+        Artifact(dir: ".kotlin", tech: .java, what: tr("cache Kotlin"), regen: regenBuild, markers: gradleMarkers),
+        Artifact(dir: ".cxx", tech: .android, what: tr("build nativ Android (CMake)"), regen: regenBuild, markers: gradleMarkers),
+        // C / C++
+        Artifact(dir: "cmake-build-debug", tech: .cpp, what: tr("build CMake (Debug)"), regen: regenBuild, markers: ["CMakeLists.txt"]),
+        Artifact(dir: "cmake-build-release", tech: .cpp, what: tr("build CMake (Release)"), regen: regenBuild, markers: ["CMakeLists.txt"]),
+        Artifact(dir: "build", tech: .cpp, what: tr("build CMake"), regen: regenBuild, markers: ["CMakeLists.txt"], inside: ["CMakeCache.txt"]),
+        Artifact(dir: "build", tech: .cpp, what: tr("build Meson"), regen: regenBuild, markers: ["meson.build"], inside: ["build.ninja"]),
+        // Elixir / Erlang
+        Artifact(dir: "_build", tech: .elixir, what: tr("build Mix"), regen: tr("Se recompilează la următorul mix compile."), markers: ["mix.exs"]),
+        Artifact(dir: "deps", tech: .elixir, what: tr("dependențe Mix"), regen: tr("Se redescarcă cu mix deps.get."), markers: ["mix.exs"]),
+        Artifact(dir: "_build", tech: .elixir, what: tr("build rebar3"), regen: tr("Se recompilează la următorul rebar3 compile."), markers: ["rebar.config"]),
+        // Haskell
+        Artifact(dir: ".stack-work", tech: .haskell, what: tr("build Stack"), regen: tr("Se recompilează la următorul stack build."), markers: ["stack.yaml"]),
+        Artifact(dir: "dist-newstyle", tech: .haskell, what: tr("build Cabal"), regen: tr("Se recompilează la următorul cabal build."),
+                 markers: ["cabal.project"], suffixes: [".cabal"]),
+        // Alte limbaje
+        Artifact(dir: ".zig-cache", tech: .other, what: tr("cache Zig"), regen: regenBuild, markers: ["build.zig"]),
+        Artifact(dir: "zig-cache", tech: .other, what: tr("cache Zig"), regen: regenBuild, markers: ["build.zig"]),
+        Artifact(dir: "zig-out", tech: .other, what: tr("build Zig"), regen: regenBuild, markers: ["build.zig"]),
+        Artifact(dir: "_build", tech: .other, what: tr("build Dune (OCaml)"), regen: tr("Se recompilează la următorul dune build."), markers: ["dune-project"]),
+        Artifact(dir: "_opam", tech: .other, what: tr("switch opam local"), regen: tr("Se recreează cu opam switch create și reinstalarea dependențelor."),
+                 markers: ["dune-project"], risk: .care),
+        Artifact(dir: ".cpcache", tech: .other, what: tr("cache Clojure"), regen: regenBuild, markers: ["deps.edn"]),
+        Artifact(dir: ".shadow-cljs", tech: .other, what: tr("cache shadow-cljs"), regen: regenBuild, markers: ["shadow-cljs.edn"]),
+        Artifact(dir: "elm-stuff", tech: .other, what: tr("build Elm"), regen: regenBuild, markers: ["elm.json"]),
+        Artifact(dir: "renv", tech: .other, what: tr("biblioteci renv (R)"), regen: tr("Se reinstalează cu renv::restore()."),
+                 markers: ["renv.lock"], sub: "library", risk: .care),
+        // Jocuri
+        Artifact(dir: "Library", tech: .gamedev, what: tr("cache Unity"), regen: tr("Unity reimportă proiectul la următoarea deschidere (poate dura)."),
+                 markers: ["ProjectSettings"], inside: ["PackageCache"], risk: .care),
+        Artifact(dir: "Intermediate", tech: .gamedev, what: tr("build Unreal"), regen: regenBuild, suffixes: [".uproject"]),
+        Artifact(dir: "DerivedDataCache", tech: .gamedev, what: tr("cache Unreal"), regen: tr("Unreal îl reface la următoarea deschidere (poate dura)."),
+                 suffixes: [".uproject"]),
+        Artifact(dir: ".godot", tech: .gamedev, what: tr("cache Godot"), regen: tr("Godot îl reface la următoarea deschidere."), markers: ["project.godot"]),
+        // Infrastructură
+        Artifact(dir: ".terraform", tech: .infra, what: tr("provideri și module Terraform"), regen: tr("Se redescarcă cu terraform init."),
+                 suffixes: [".tf"], risk: .care),
         Artifact(dir: ".venv", tech: .python, what: tr("mediu virtual Python"), regen: tr("Se recreează cu python -m venv și reinstalarea dependențelor."),
                  inside: ["pyvenv.cfg"], risk: .care),
         Artifact(dir: "venv", tech: .python, what: tr("mediu virtual Python"), regen: tr("Se recreează cu python -m venv și reinstalarea dependențelor."),
@@ -460,14 +519,17 @@ enum Targets {
             let last = lastActivity(dir, skip: skip)
             let active = last > cutoff
             let days = max(0, Int(Date().timeIntervalSince(last) / (24 * 3600)))
-            let rel = Paths.relative(dir, to: home)
+            // Proiectele de pe un disc extern apar cu numele discului în față.
+            let rel = Paths.underHome(dir) ? Paths.relative(dir, to: home) : Paths.relative(dir, to: "/Volumes")
             return CleanTarget(
                 id: id + full, tech: tech, group: group,
                 name: group == "node_modules din proiecte" ? rel : "\(rel) — \(what)",
                 desc: tr("Ultima activitate în proiect: \(df.string(from: last)) (acum \(days) zile). \(regen)")
                     + (active ? tr(" Lucrezi recent la el, așa că nu e bifat implicit.") : ""),
                 risk: active || care ? .care : .safe,
-                resolve: { Paths.existing([full]) })
+                external: !Paths.underHome(dir),
+                resolve: { Paths.existing([full]) },
+                project: dir, artifact: what, lastActive: last)
         }
 
         func walk(_ dir: String, depth: Int) {
@@ -483,7 +545,7 @@ enum Targets {
                         L.append(target(id: "nm:", tech: .js, group: "node_modules din proiecte", full: full, dir: dir, skip: d,
                                         what: "node_modules", regen: tr("Se reinstalează cu npm / yarn / pnpm install.")))
                     }
-                } else if dir != home, artifactDirs.contains(d),
+                } else if depth > 0, artifactDirs.contains(d),
                           let a = artifacts.first(where: { $0.dir == d && $0.matches(parent: dir, names: names, full: full) }) {
                     L.append(target(id: "art:", tech: a.tech, group: "Build-uri din proiecte",
                                     full: a.sub.map { Paths.join(full, $0) } ?? full, dir: dir, skip: d,
@@ -496,6 +558,7 @@ enum Targets {
             }
         }
         walk(home, depth: 0)
+        for v in Paths.externalVolumes() { walk(v, depth: 0) }
         return L
     }
 }

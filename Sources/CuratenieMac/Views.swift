@@ -13,7 +13,7 @@ struct CuratenieMacApp: App {
 
     init() {
         AppLanguage.applyDefaultOnce()
-        Profile.detectOnce()
+        Profile.migrate()
     }
 
     var body: some Scene {
@@ -50,6 +50,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         completionHandler([.banner, .sound])
     }
 
+    /// Click pe notificare: aplicația vine în față, pe secțiunea potrivită.
+    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
+                                withCompletionHandler completionHandler: @escaping () -> Void) {
+        let section = response.notification.request.content.userInfo["section"] as? String
+        DispatchQueue.main.async {
+            Self.launchedAtLogin = false
+            Self.showInDock()
+            if let section { NotificationCenter.default.post(name: .openCleanerSection, object: section) }
+        }
+        completionHandler()
+    }
+
     /// Ieșire reală doar din meniul din bară sau la logout / oprire.
     static var quitting = false
 
@@ -66,6 +78,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     /// Redeschis din Finder / Launchpad: revine în Dock; SwiftUI recreează fereastra.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        Self.launchedAtLogin = false
         Self.showInDock()
         return true
     }
@@ -79,9 +92,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         NSApp.setActivationPolicy(.accessory)
     }
 
+    /// Pornită de macOS la login (nu de utilizator): rămâne doar iconița din bara de meniu.
+    /// CURATENIE_LOGIN simulează pornirea la login (diagnostic).
+    static var launchedAtLogin = false
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        let event = NSAppleEventManager.shared().currentAppleEvent
+        Self.launchedAtLogin = ProcessInfo.processInfo.environment["CURATENIE_LOGIN"] != nil
+            || (event?.eventID == kAEOpenApplication
+                && event?.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem)
+        if Self.launchedAtLogin { Self.hideFromDock() }
+    }
+
+    private static func closeMainWindows() {
+        for w in NSApp.windows where w.canBecomeMain { w.close() }
+        hideFromDock()
+    }
+
     /// Diagnostic: CURATENIE_SNAPSHOT=/cale/prefix salvează capturi ale ferestrei (fără permisiune de înregistrare ecran).
     func applicationDidFinishLaunching(_ notification: Notification) {
         LoginItem.enableOnce()
+        if Self.launchedAtLogin {
+            // SwiftUI creează fereastra imediat după lansare: o închid de cum apare.
+            Self.closeMainWindows()
+            for delay in [0.0, 0.3, 1.0] {
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                    if AppDelegate.launchedAtLogin { AppDelegate.closeMainWindows() }
+                }
+            }
+        }
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.willPowerOffNotification, object: nil, queue: .main) { _ in
             AppDelegate.quitting = true
         }
@@ -104,7 +143,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         try? diag.write(toFile: prefix + "-diag.txt", atomically: true, encoding: .utf8)
         if ProcessInfo.processInfo.environment["CURATENIE_TARGETS"] != nil {
             DispatchQueue.global().async {
-                let list = (Targets.homebrewTargets() + Targets.devCacheTargets() + Targets.iosDeviceTargets() + Targets.downloadsTargets()
+                let list = (Targets.homebrewTargets() + Targets.devCacheTargets() + Targets.toolVersionTargets() + Targets.iosDeviceTargets() + Targets.downloadsTargets()
                     + Targets.timeMachineTargets() + Targets.browserTargets()).filter(\.isVisible) + Targets.duplicateTargets()
                 let dump = list.map { "[\($0.group)] \($0.name) = \(Fmt.bytes($0.size())) (\($0.resolve().count) căi)" }
                     + StartupScanner.scan().map { "[Pornire] \($0.label) \($0.domain) disabled=\($0.disabled) loaded=\($0.loaded)" }
@@ -291,6 +330,7 @@ struct MenuBarLabel: View {
             rec.scanIfNeeded()
             left.scanIfNeeded()
             update.checkIfDue()
+            await SystemMonitor.shared.checkAlerts()  // prima citire: baza pentru media pe un minut
         }
         .onReceive(tick) { _ in
             rec.refreshDisk()
@@ -306,12 +346,14 @@ struct MenuBarLabel: View {
             let low = limit > 0 && rec.diskTotal > 0 && rec.diskFree < limit
             if low && !wasLow { Notifier.lowSpace(free: rec.diskFree, reclaimable: rec.reclaimable) }
             wasLow = low
+            Task { await SystemMonitor.shared.checkAlerts() }
             lastLevel = level
         }
     }
 }
 
 struct MenuBarPanel: View {
+    @ObservedObject private var mon = SystemMonitor.shared
     @ObservedObject var rec: RecommendationsStore
     @ObservedObject var left: LeftoversStore
     @ObservedObject var update: UpdateStore
@@ -333,6 +375,9 @@ struct MenuBarPanel: View {
                     rec.scanning || rec.pendingCount > 0 ? "\(Fmt.bytes(rec.reclaimable))…" : Fmt.bytes(rec.reclaimable))
                 row("shippingbox", tr("Resturi găsite"),
                     left.scanning ? "…" : (safe > 0 ? tr("\(left.findings.count) (\(safe) sigure)") : "\(left.findings.count)"))
+                if let m = mon.memory {
+                    row("memorychip", tr("RAM disponibil"), "\(Fmt.bytes(Int64(m.available))) · \(Int((m.freeFraction * 100).rounded()))%")
+                }
             }
             Toggle("Pornește la deschiderea Mac-ului", isOn: Binding(get: { atLogin }, set: { on in
                 LoginItem.set(on)
@@ -348,6 +393,7 @@ struct MenuBarPanel: View {
             Divider()
             HStack {
                 Button("Deschide Cleaner MacOS") {
+                    AppDelegate.launchedAtLogin = false
                     AppDelegate.showInDock()
                     openWindow(id: "main")
                 }

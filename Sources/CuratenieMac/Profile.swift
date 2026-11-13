@@ -1,25 +1,33 @@
 import Foundation
 
-/// Tehnologiile de dezvoltare după care se filtrează scanarea: ce nu folosești nu se caută și nu apare.
+/// Ecosistemele de dezvoltare. Servesc la grupare și filtrare în secțiunea Dezvoltator; se caută toate, iar
+/// ce nu există pe Mac nu apare. Utilizatorul poate ascunde un ecosistem (nu se mai caută deloc).
 enum Tech: String, CaseIterable, Identifiable, Sendable {
-    case js, apple, android, flutter, rust, go, java, python, php, ruby, dotnet, docker, tools, ai, claude
+    case js, python, rust, go, java, apple, android, flutter, php, ruby, dotnet, cpp, elixir, haskell, other,
+         gamedev, infra, docker, tools, ai, claude
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .js: "JavaScript / Node"
-        case .apple: "Xcode / iOS"
-        case .android: "Android"
-        case .flutter: "Flutter / Dart"
+        case .python: "Python"
         case .rust: "Rust"
         case .go: "Go"
-        case .java: "Java / Gradle"
-        case .python: "Python"
+        case .java: "Java / Kotlin / Scala"
+        case .apple: "Xcode / Swift"
+        case .android: "Android"
+        case .flutter: "Flutter / Dart"
         case .php: "PHP"
         case .ruby: "Ruby"
         case .dotnet: ".NET"
-        case .docker: "Docker"
+        case .cpp: "C / C++"
+        case .elixir: "Elixir / Erlang"
+        case .haskell: "Haskell"
+        case .other: tr("Alte limbaje")
+        case .gamedev: tr("Jocuri (Unity, Unreal, Godot)")
+        case .infra: tr("Infrastructură")
+        case .docker: tr("Containere și VM-uri")
         case .tools: tr("Homebrew și editoare")
         case .ai: tr("Modele AI locale")
         case .claude: "Claude"
@@ -29,16 +37,22 @@ enum Tech: String, CaseIterable, Identifiable, Sendable {
     var icon: String {
         switch self {
         case .js: "shippingbox"
-        case .apple: "iphone"
-        case .android: "candybarphone"
-        case .flutter: "bird"
+        case .python: "chevron.left.forwardslash.chevron.right"
         case .rust: "gearshape.2"
         case .go: "hare"
         case .java: "cup.and.saucer"
-        case .python: "chevron.left.forwardslash.chevron.right"
+        case .apple: "swift"
+        case .android: "candybarphone"
+        case .flutter: "bird"
         case .php: "server.rack"
         case .ruby: "diamond"
         case .dotnet: "number"
+        case .cpp: "c.square"
+        case .elixir: "drop"
+        case .haskell: "function"
+        case .other: "curlybraces"
+        case .gamedev: "gamecontroller"
+        case .infra: "network"
         case .docker: "cube.box"
         case .tools: "wrench.and.screwdriver"
         case .ai: "cpu"
@@ -46,11 +60,10 @@ enum Tech: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// Urme pe disc că tehnologia e folosită pe acest Mac.
+    /// Urme pe disc că ecosistemul e folosit (doar pentru răspunsul implicit la „ești dezvoltator?”).
     func detect() -> Bool {
         func any(_ paths: [String]) -> Bool { !Paths.existing(paths).isEmpty }
         let C = Paths.hp("Library", "Caches")
-        let AS = Paths.hp("Library", "Application Support")
         switch self {
         case .js:
             return any([Paths.hp(".npm"), Paths.hp(".bun"), Paths.hp("Library", "pnpm"), Paths.hp(".nvm"), Paths.hp(".yarn"),
@@ -66,7 +79,7 @@ enum Tech: String, CaseIterable, Identifiable, Sendable {
         case .go:
             return Targets.goCLI != nil || any([Paths.hp("go", "pkg"), Paths.join(C, "go-build")])
         case .java:
-            return any([Paths.hp(".m2"), Paths.hp(".gradle")])
+            return any([Paths.hp(".m2"), Paths.hp(".gradle"), Paths.hp(".sbt"), Paths.hp(".sdkman")])
         case .python:
             return any([Paths.join(C, "pip"), Paths.hp(".cache", "uv"), Paths.join(C, "uv"), Paths.hp(".pyenv"),
                         Paths.hp(".conda"), Paths.hp(".virtualenvs"), Paths.join(C, "pypoetry")])
@@ -76,30 +89,43 @@ enum Tech: String, CaseIterable, Identifiable, Sendable {
             return any([Paths.hp(".gem"), Paths.hp(".bundle"), Paths.hp(".rbenv"), Paths.hp(".rvm")])
         case .dotnet:
             return any([Paths.hp(".nuget"), Paths.hp(".dotnet")])
-        case .docker:
-            return Targets.dockerCLI != nil || any([Paths.hp(".docker")])
-        case .tools:
-            return Targets.brewCLI != nil || any([Paths.join(AS, "Code"), Paths.join(AS, "Cursor"), Paths.join(C, "JetBrains")])
-        case .ai:
-            return any([Paths.hp(".ollama"), Paths.hp(".lmstudio"), Paths.hp(".cache", "lm-studio"), Paths.hp(".cache", "huggingface")])
-        case .claude:
-            return any([Paths.hp(".claude"), Paths.join(AS, "Claude")])
+        case .cpp:
+            return any([Paths.hp(".conan2"), Paths.hp(".conan"), Paths.join(C, "ccache"), Paths.hp(".ccache")])
+        case .elixir:
+            return any([Paths.hp(".hex"), Paths.hp(".mix"), Paths.hp(".cache", "rebar3")])
+        case .haskell:
+            return any([Paths.hp(".stack"), Paths.hp(".cabal"), Paths.hp(".ghcup")])
+        case .gamedev:
+            return any([Paths.hp("Library", "Unity"), Paths.hp("Library", "Application Support", "Godot")])
+        case .infra:
+            return any([Paths.hp(".terraform.d"), Paths.hp(".vagrant.d"), Paths.hp(".minikube")])
+        case .other, .docker, .tools, .ai, .claude:
+            return false
         }
     }
 }
 
-/// Profilul utilizatorului: dezvoltator sau nu, și cu ce tehnologii lucrează.
+/// Dezvoltator sau nu (întrebat o dată, la prima pornire) și ecosistemele ascunse din secțiunea Dezvoltator.
 enum Profile {
     static let devModeKey = "profileDevMode"
-    /// Valorile `Tech.rawValue`, separate prin virgulă (formă compatibilă cu `@AppStorage`).
-    static let techsKey = "profileTechs"
+    /// Utilizatorul a răspuns la întrebarea de la prima pornire.
+    static let askedKey = "profileDevModeAsked"
+    /// Valorile `Tech.rawValue` ascunse, separate prin virgulă (formă compatibilă cu `@AppStorage`).
+    static let hiddenKey = "profileHiddenTechs"
 
-    static var devMode: Bool { UserDefaults.standard.bool(forKey: devModeKey) }
+    /// Până la răspuns: ghicit din ce e instalat, ca prima scanare să arate deja ce trebuie.
+    static var devMode: Bool {
+        let d = UserDefaults.standard
+        if d.object(forKey: devModeKey) == nil { return guess() }
+        return d.bool(forKey: devModeKey)
+    }
 
-    static var techs: Set<Tech> { decode(UserDefaults.standard.string(forKey: techsKey) ?? "") }
+    static var asked: Bool { UserDefaults.standard.bool(forKey: askedKey) }
 
-    /// Tehnologiile după care se scanează acum (nimic, dacă profilul de dezvoltator e oprit).
-    static var active: Set<Tech> { devMode ? techs : [] }
+    static var hidden: Set<Tech> { decode(UserDefaults.standard.string(forKey: hiddenKey) ?? "") }
+
+    /// Ecosistemele care se caută acum: toate, fără cele ascunse; nimic dacă nu ești dezvoltator.
+    static var active: Set<Tech> { devMode ? Set(Tech.allCases).subtracting(hidden) : [] }
 
     static func decode(_ s: String) -> Set<Tech> {
         Set(s.split(separator: ",").compactMap { Tech(rawValue: String($0)) })
@@ -109,20 +135,34 @@ enum Profile {
         Tech.allCases.filter(t.contains).map(\.rawValue).joined(separator: ",")
     }
 
-    static func detected() -> Set<Tech> { Set(Tech.allCases.filter { $0.detect() }) }
+    /// Doar Claude, modelele AI, Homebrew sau un editor nu fac pe cineva dezvoltator.
+    static func guess() -> Bool { Tech.allCases.contains { $0.detect() } }
 
-    /// Prima pornire: profilul se completează singur din ce e instalat; după aceea decide utilizatorul din Setări.
-    static func detectOnce() {
+    static func answer(developer: Bool) {
+        let changed = developer != devMode
         let d = UserDefaults.standard
-        guard d.object(forKey: devModeKey) == nil else { return }
-        let found = detected()
-        d.set(encode(found), forKey: techsKey)
-        // Doar Claude, modelele AI, Homebrew sau un editor nu fac pe cineva dezvoltator.
-        d.set(!found.subtracting([.claude, .ai, .tools]).isEmpty, forKey: devModeKey)
+        d.set(developer, forKey: devModeKey)
+        d.set(true, forKey: askedKey)
+        if changed { NotificationCenter.default.post(name: .profileChanged, object: nil) }
+    }
+
+    static func setHidden(_ t: Tech, _ hide: Bool) {
+        var h = hidden
+        if hide { h.insert(t) } else { h.remove(t) }
+        UserDefaults.standard.set(encode(h), forKey: hiddenKey)
+        NotificationCenter.default.post(name: .profileChanged, object: nil)
+    }
+
+    /// Versiunea veche alegea tehnologiile manual: lista aceea nu mai are sens.
+    /// Până la răspuns, valoarea ghicită se salvează, ca `@AppStorage` să vadă același lucru ca scanarea.
+    static func migrate() {
+        let d = UserDefaults.standard
+        d.removeObject(forKey: "profileTechs")
+        if d.object(forKey: devModeKey) == nil { d.set(guess(), forKey: devModeKey) }
     }
 }
 
 extension Notification.Name {
-    /// Profilul s-a schimbat din Setări: recomandările trebuie rescanate.
+    /// Profilul s-a schimbat: recomandările trebuie rescanate.
     static let profileChanged = Notification.Name("profileChanged")
 }

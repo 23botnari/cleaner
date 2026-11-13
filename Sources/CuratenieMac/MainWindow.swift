@@ -11,21 +11,23 @@ func trKey(_ key: String) -> String { Bundle.main.localizedString(forKey: key, v
 // MARK: - Secțiuni
 
 enum Section: String, Hashable, CaseIterable {
-    case overview, rec, dev, big, exp, apps, left, start, settings
+    case overview, rec, dev, memory, big, exp, apps, left, start, history, settings
 
     /// Ce apare în lista principală din bara laterală (Setări are butonul ei, jos).
-    static let main: [Section] = [.overview, .rec, .dev, .big, .exp, .apps, .left, .start]
+    static let main: [Section] = [.overview, .rec, .dev, .memory, .big, .exp, .apps, .left, .start, .history]
 
     var title: LocalizedStringKey {
         switch self {
         case .overview: "Prezentare"
         case .rec: "Recomandări"
         case .dev: "Dezvoltator"
+        case .memory: "Memorie și procese"
         case .big: "Fișiere mari"
         case .exp: "Explorator"
         case .apps: "Aplicații"
         case .left: "Resturi"
         case .start: "Pornire automată"
+        case .history: "Istoric"
         case .settings: "Setări"
         }
     }
@@ -35,11 +37,13 @@ enum Section: String, Hashable, CaseIterable {
         case .overview: "gauge.with.dots.needle.33percent"
         case .rec: "checklist"
         case .dev: "hammer"
+        case .memory: "memorychip"
         case .big: "doc.text.magnifyingglass"
         case .exp: "folder"
         case .apps: "square.grid.2x2"
         case .left: "shippingbox"
         case .start: "power"
+        case .history: "clock.arrow.circlepath"
         case .settings: "gearshape"
         }
     }
@@ -61,6 +65,7 @@ enum GroupInfo {
         case "Claude": "terminal"
         case "Descărcări": "arrow.down.circle"
         case "iPhone / iPad": "ipad.and.iphone"
+        case "Versiuni de unelte": "square.stack.3d.up"
         default: "folder"
         }
     }
@@ -71,7 +76,7 @@ enum GroupInfo {
         case "Claude": (Theme.dyn(0xFCEEE7, 0x3D2A20), Theme.dyn(0xB4532A, 0xF0A07A))
         case "Simulatoare iOS", "iPhone / iPad", "Browsere", "Descărcări": (Theme.intBg, Theme.intFg)
         case "node_modules din proiecte", "Build-uri din proiecte", "Android": (Theme.safeBg, Theme.safeFg)
-        case "Dezvoltare": (Theme.extBg, Theme.extFg)
+        case "Dezvoltare", "Versiuni de unelte": (Theme.extBg, Theme.extFg)
         case "Aplicații de chat": (Theme.dyn(0xE4F6F5, 0x163533), Theme.dyn(0x0B6E69, 0x6FD6CF))
         default: (Theme.dyn(0xF0F1F3, 0x33353A), Theme.dyn(0x3D434B, 0xC5CAD0))
         }
@@ -86,12 +91,14 @@ struct ContentView: View {
     @ObservedObject var update: UpdateStore
     @StateObject private var exp = ExplorerStore()
     @StateObject private var big = ExplorerStore()
+    @State private var askDevMode = false
     @StateObject private var apps = AppsStore()
     @StateObject private var startup = StartupStore()
     @StateObject private var flow = CleanFlow()
     @State private var section: Section = Section(rawValue: ProcessInfo.processInfo.environment["CURATENIE_TAB"] ?? "") ?? .overview
     @State private var focusGroup: String?
     @State private var hasFDA = FullDiskAccess.granted()
+    @State private var expLoaded = false
 
     var body: some View {
         HStack(spacing: 0) {
@@ -110,30 +117,49 @@ struct ContentView: View {
         .foregroundStyle(Theme.text)
         .ignoresSafeArea(.container, edges: .top)
         .cleanFlow(flow, rec: rec)
+        .overlay { DialogHost() }
         .onAppear {
+            // Doar ce se vede din prima; restul secțiunilor se încarcă la prima deschidere.
             rec.scanIfNeeded()
-            exp.open(Paths.realHome)
             apps.scan()
             left.scanIfNeeded()
-            startup.scanIfNeeded()
             if let dir = ProcessInfo.processInfo.environment["CURATENIE_BIG"] {  // diagnostic
                 big.path = dir
                 big.findBigFiles()
-            } else if section == .big {
-                big.findBigFiles()
             }
+            load(section)
+            if !Profile.asked { askDevMode = true }
         }
-        .onChange(of: section) { _, s in
-            if s == .big && big.mode != .bigFiles && !big.loading { big.findBigFiles() }
-        }
+        .appSheet(isPresented: $askDevMode) { DevModeQuestion { askDevMode = false } }
+        .onChange(of: section) { _, s in load(s) }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             hasFDA = FullDiskAccess.granted()
             rec.refreshDisk()
         }
         .onReceive(NotificationCenter.default.publisher(for: .openCleanerSettings)) { _ in section = .settings }
+        .onReceive(NotificationCenter.default.publisher(for: .openCleanerSection)) { n in
+            if let s = (n.object as? String).flatMap(Section.init(rawValue:)) { section = s }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .profileChanged)) { _ in
             if section == .dev && !Profile.devMode { section = .rec }
             rec.scan()
+        }
+    }
+
+    /// Încărcare la prima deschidere a secțiunii.
+    private func load(_ s: Section) {
+        switch s {
+        case .big:
+            if big.mode != .bigFiles && !big.loading { big.findBigFiles() }
+        case .exp:
+            if !expLoaded {
+                expLoaded = true
+                exp.open(Paths.realHome)
+            }
+        case .start:
+            startup.scanIfNeeded()
+        default:
+            break
         }
     }
 
@@ -160,6 +186,10 @@ struct ContentView: View {
             return tr("Fișiere rămase de la aplicații dezinstalate.")
         case .start:
             return tr("Ce pornește odată cu Mac-ul.")
+        case .history:
+            return tr("Ce ai curățat din aplicație și cât spațiu ai eliberat.")
+        case .memory:
+            return tr("Cât RAM și procesor folosesc aplicațiile, actualizat la 2 secunde.")
         case .settings:
             return tr("Limbă, pornire, scanare automată și permisiuni.")
         }
@@ -173,6 +203,7 @@ struct ContentView: View {
                 switch target {
                 case "apps": section = .apps
                 case "big": section = .big
+                case "dev": section = .dev
                 default:
                     focusGroup = target
                     section = rec.targets.contains { $0.group == target && $0.isDev } ? .dev : .rec
@@ -185,6 +216,8 @@ struct ContentView: View {
         case .apps: AppsView(store: apps, onChange: { rec.refreshDisk() })
         case .left: LeftoversView(store: left, hasFDA: hasFDA, onChange: { rec.refreshDisk() })
         case .start: StartupView(store: startup)
+        case .history: HistoryView()
+        case .memory: MemoryView()
         case .settings: SettingsPage(update: update)
         }
     }
@@ -205,7 +238,7 @@ struct ContentView: View {
             Button { big.findBigFiles() } label: { label }.buttonStyle(SecondaryButtonStyle(height: 34)).disabled(big.loading)
         case .exp:
             Button { exp.refresh() } label: { label }.buttonStyle(SecondaryButtonStyle(height: 34))
-        case .settings:
+        case .settings, .history, .memory:
             EmptyView()
         }
     }
@@ -217,6 +250,7 @@ struct AppSidebar: View {
     @ObservedObject var update: UpdateStore
     let hasFDA: Bool
     @AppStorage(Profile.devModeKey) private var devMode = false
+    static let devTint = Theme.dyn(0xB45309, 0xF5A524)
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -226,6 +260,8 @@ struct AppSidebar: View {
             ForEach(Section.main.filter { $0 != .dev || devMode }, id: \.self) { s in
                 let on = s == section
                 let badge = s == .rec ? rec.reclaimable(dev: false) : s == .dev ? rec.reclaimable(dev: true) : 0
+                // Recomandări verde, Dezvoltator chihlimbar: fundal ușor colorat când sunt deschise.
+                let tint: Color? = s == .rec ? Theme.reclaim : s == .dev ? Self.devTint : nil
                 Button { section = s } label: {
                     HStack(spacing: 10) {
                         Image(systemName: s.icon).font(.system(size: 14, weight: .medium)).frame(width: 18)
@@ -235,16 +271,21 @@ struct AppSidebar: View {
                             Text(Fmt.bytes(badge))
                                 .font(.system(size: 11.5, weight: .semibold)).monospacedDigit()
                                 .padding(.horizontal, 7).padding(.vertical, 1)
-                                .background(Capsule().fill(Theme.safeBg))
-                                .foregroundStyle(Theme.safeFg)
+                                .background(Capsule().fill(s == .dev ? Self.devTint.opacity(0.2) : Theme.safeBg))
+                                .foregroundStyle(s == .dev ? Self.devTint : Theme.safeFg)
                         }
                     }
                     .padding(.horizontal, 10).frame(height: 34)
-                    .foregroundStyle(on ? Theme.accentText : Theme.text)
+                    .foregroundStyle(on ? (s == .dev ? Self.devTint : Theme.accentText) : Theme.text)
                     .background {
                         if on {
-                            RoundedRectangle(cornerRadius: 8).fill(Theme.card)
-                                .shadow(color: .black.opacity(0.08), radius: 1, y: 1)
+                            if let tint {
+                                RoundedRectangle(cornerRadius: 8).fill(tint.opacity(0.14))
+                                    .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(tint.opacity(0.22)))
+                            } else {
+                                RoundedRectangle(cornerRadius: 8).fill(Theme.card)
+                                    .shadow(color: .black.opacity(0.08), radius: 1, y: 1)
+                            }
                         }
                     }
                     .contentShape(Rectangle())
@@ -269,6 +310,19 @@ struct AppSidebar: View {
                 .buttonStyle(.plain)
                 .padding(.bottom, 4)
             }
+            Button { NSWorkspace.shared.open(UpdateStore.repoURL) } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "star").font(.system(size: 13, weight: .medium)).frame(width: 18)
+                    Text("Dă-ne o stea pe GitHub").font(.system(size: 12.5, weight: .medium)).lineLimit(1).minimumScaleFactor(0.85)
+                    Spacer(minLength: 0)
+                    Image(systemName: "arrow.up.right").font(.system(size: 10, weight: .semibold)).foregroundStyle(Theme.faint)
+                }
+                .padding(.horizontal, 10).frame(height: 30)
+                .foregroundStyle(Theme.muted)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(UpdateStore.repoURL.absoluteString)
             Button { section = .settings } label: {
                 HStack(spacing: 10) {
                     Image(systemName: "gearshape").font(.system(size: 14, weight: .medium)).frame(width: 18)
@@ -376,29 +430,48 @@ struct OverviewView: View {
 
     var body: some View {
         let used = max(0, rec.diskTotal - rec.diskFree)
-        let safeIDs = rec.safeIDs
+        // Prezentarea arată doar curățarea generală; ce ține de dezvoltare stă în secțiunea Dezvoltator.
+        let reclaimable = rec.reclaimable(dev: false)
+        let devBytes = rec.reclaimable(dev: true)
+        let safeIDs = rec.safeIDs(dev: false)
         let safeBytes = safeIDs.reduce(Int64(0)) { $0 + (rec.sizes[$1] ?? 0) }
         let computing = rec.scanning || rec.pendingCount > 0
-        let groups = rec.groups
+        let groups = rec.groups.compactMap { g -> (name: String, total: Int64, items: [CleanTarget])? in
+            let items = g.items.filter { !$0.isDev }
+            guard !items.isEmpty else { return nil }
+            return (g.name, items.reduce(0) { $0 + ($1.overlap ? 0 : (rec.sizes[$1.id] ?? 0)) }, items)
+        }
         let maxGroup = Double(max(groups.map(\.total).max() ?? 1, 1))
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 HStack(spacing: 36) {
-                    StorageRing(total: rec.diskTotal, used: used, reclaimable: rec.reclaimable)
+                    StorageRing(total: rec.diskTotal, used: used, reclaimable: reclaimable)
                         .frame(width: 176, height: 176)
                     VStack(alignment: .leading, spacing: 14) {
                         VStack(alignment: .leading, spacing: 0) {
                             Text("SE POT ELIBERA").font(.system(size: 12.5, weight: .semibold)).tracking(0.8)
                                 .foregroundStyle(Theme.accentText)
                             HStack(alignment: .firstTextBaseline, spacing: 10) {
-                                Text(Fmt.bytes(rec.reclaimable)).font(.system(size: 46, weight: .heavy)).monospacedDigit()
+                                Text(Fmt.bytes(reclaimable)).font(.system(size: 46, weight: .heavy)).monospacedDigit()
                                 if computing { ProgressView().controlSize(.small) }
                             }
                             Text("din care \(Fmt.bytes(safeBytes)) fără niciun risc").foregroundStyle(Theme.muted)
+                            if devBytes > 0 {
+                                Button { open("dev") } label: {
+                                    HStack(spacing: 5) {
+                                        Image(systemName: "hammer")
+                                        Text("încă \(Fmt.bytes(devBytes)) în Dezvoltator")
+                                        Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
+                                    }
+                                    .font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.accentText)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain).padding(.top, 6)
+                            }
                         }
                         HStack(spacing: 18) {
-                            legend(Theme.used, "Folosit", Fmt.bytes(max(0, used - min(rec.reclaimable, used))))
-                            legend(Theme.reclaim, "Se poate elibera", Fmt.bytes(rec.reclaimable))
+                            legend(Theme.used, "Folosit", Fmt.bytes(max(0, used - min(reclaimable, used))))
+                            legend(Theme.reclaim, "Se poate elibera", Fmt.bytes(reclaimable))
                             legend(Theme.track, "Liber", Fmt.bytes(rec.diskFree))
                         }
                         .font(.system(size: 13))
@@ -417,6 +490,22 @@ struct OverviewView: View {
                 .card(radius: 16, padding: 26)
 
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 230), spacing: 12)], spacing: 12) {
+                    if groups.isEmpty && rec.scanning {
+                        ForEach(0..<4, id: \.self) { _ in
+                            VStack(alignment: .leading, spacing: 10) {
+                                HStack(spacing: 10) {
+                                    SkeletonBlock(width: 32, height: 32, radius: 8)
+                                    SkeletonBlock(width: 90)
+                                    Spacer()
+                                    SkeletonBlock(width: 56)
+                                }
+                                SkeletonBlock(height: 6, radius: 3)
+                                SkeletonBlock(width: 70, height: 10)
+                            }
+                            .padding(.horizontal, 16).padding(.vertical, 14)
+                            .card()
+                        }
+                    }
                     ForEach(groups, id: \.name) { g in
                         Button { open(g.name) } label: {
                             VStack(alignment: .leading, spacing: 8) {
@@ -437,7 +526,11 @@ struct OverviewView: View {
                     }
                 }
 
-                let topApps = Array(apps.apps.filter { $0.total != nil }.sorted { ($0.total ?? 0) > ($1.total ?? 0) }.prefix(4))
+                // Doar discul intern: aplicațiile de pe discuri externe nu ocupă loc pe Mac.
+                let topApps = Array(apps.apps.filter { $0.total != nil && $0.volume.isInternal }.sorted { ($0.total ?? 0) > ($1.total ?? 0) }.prefix(4))
+                if topApps.isEmpty && apps.loading {
+                    SkeletonRows(count: 4, icon: 20).frame(height: 4 * 58 + 2)
+                }
                 if !topApps.isEmpty {
                     VStack(alignment: .leading, spacing: 2) {
                         HStack {
@@ -515,10 +608,12 @@ struct RecommendationsView: View {
     let dev: Bool
     @State private var group: String?
     @State private var filter: RiskFilter = .all
-    @AppStorage(Profile.techsKey) private var techsRaw = ""
+    @State private var techFilter: Tech?
+    @AppStorage("devViewByProject") private var byProject = false
 
     private func visible(_ t: CleanTarget) -> Bool {
         guard t.isDev == dev else { return false }
+        if dev, let techFilter, t.tech != techFilter { return false }
         switch filter {
         case .all: return true
         case .safe: return t.risk == .safe
@@ -541,28 +636,27 @@ struct RecommendationsView: View {
                     Text("Atenție").tag(RiskFilter.care)
                 }
                 .pickerStyle(.segmented).labelsHidden().frame(width: 260)
+                if dev { techMenu }
                 Spacer()
                 if dev {
-                    let techs = Tech.allCases.filter(Profile.decode(techsRaw).contains)
-                    Text(techs.isEmpty ? tr("Nicio tehnologie în profil") : techs.map(\.title).joined(separator: " · "))
-                        .font(.system(size: 12)).foregroundStyle(Theme.muted).lineLimit(1).truncationMode(.tail)
-                        .frame(maxWidth: 420, alignment: .trailing)
-                    Button("Editează profilul") { NotificationCenter.default.post(name: .openCleanerSettings, object: nil) }
-                        .buttonStyle(.plain).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Theme.accentText)
+                    Picker("", selection: $byProject) {
+                        Text("Categorii").tag(false)
+                        Text("Proiecte").tag(true)
+                    }
+                    .pickerStyle(.segmented).labelsHidden().frame(width: 200)
                 }
             }
             .padding(.horizontal, 28).padding(.bottom, 12)
             Rectangle().fill(Theme.line).frame(height: 1)
-            if groups.isEmpty {
-                VStack(spacing: 10) {
-                    if store.scanning || store.scanningNodeModules {
-                        ProgressView()
-                        Text("Caut ce se poate curăța…").foregroundStyle(Theme.muted)
-                    } else {
-                        Text("Nimic de curățat.").foregroundStyle(Theme.muted)
-                    }
+            if dev && byProject && !groups.isEmpty {
+                ProjectsList(store: store, flow: flow, items: groups.flatMap(\.items))
+            } else if groups.isEmpty {
+                if store.scanning || store.scanningNodeModules {
+                    SkeletonRows(label: tr("Caut ce se poate curăța…")).padding(.horizontal, 28).padding(.top, 16)
+                } else {
+                    Text("Nimic de curățat.").foregroundStyle(Theme.muted)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 HStack(spacing: 0) {
                     ScrollView {
@@ -613,6 +707,39 @@ struct RecommendationsView: View {
             focusGroup = nil
             if group == nil { group = groups.first?.name }
         }
+    }
+
+    /// Ecosistemele găsite pe Mac, cu mărimea lor: filtrează lista; „Ascunde” le scoate din scanare.
+    private var techMenu: some View {
+        let devTargets = store.targets.filter { $0.isDev && !store.done.contains($0.id) }
+        var sizes: [Tech: Int64] = [:]
+        for t in devTargets where !t.overlap { if let k = t.tech { sizes[k, default: 0] += store.sizes[t.id] ?? 0 } }
+        let present = Set(devTargets.compactMap(\.tech))
+        let techs = Tech.allCases.filter(present.contains).sorted { (sizes[$0] ?? 0) > (sizes[$1] ?? 0) }
+        return Menu {
+            Button { techFilter = nil; group = nil } label: { Label("Toate tehnologiile", systemImage: "square.grid.2x2") }
+            Divider()
+            ForEach(techs) { t in
+                Button { techFilter = t; group = nil } label: {
+                    Label("\(t.title) · \(Fmt.bytes(sizes[t] ?? 0))", systemImage: techFilter == t ? "checkmark" : t.icon)
+                }
+            }
+            if let t = techFilter {
+                Divider()
+                Button(role: .destructive) { hide(t) } label: { Label("Ascunde \(t.title)", systemImage: "eye.slash") }
+                    .help(tr("Nu se mai caută și nu mai apare aici. Îl poți readuce din Setări."))
+            }
+        } label: {
+            Label(techFilter?.title ?? tr("Toate tehnologiile"), systemImage: techFilter?.icon ?? "square.grid.2x2")
+        }
+        .fixedSize()
+        .padding(.leading, 8)
+        .onChange(of: present) { _, p in if let t = techFilter, !p.contains(t), !store.scanning { techFilter = nil } }
+    }
+
+    private func hide(_ t: Tech) {
+        if techFilter == t { techFilter = nil }
+        Profile.setHidden(t, true)
     }
 
     private func groupRow(_ g: (name: String, total: Int64, items: [CleanTarget]), active: Bool) -> some View {
@@ -687,6 +814,9 @@ struct RecommendationsView: View {
             .frame(width: 140, alignment: .trailing)
         }
         .padding(.horizontal, 24).padding(.vertical, 14)
+        .togglesCheckbox(enabled: !isDone && (size ?? 0) > 0) {
+            if store.selected.contains(t.id) { store.selected.remove(t.id) } else { store.selected.insert(t.id) }
+        }
         .opacity(isDone ? 0.55 : 1)
     }
 
@@ -715,6 +845,173 @@ struct RecommendationsView: View {
         }
         .padding(.horizontal, 24).frame(height: 68)
         .background(Theme.card)
+    }
+}
+
+/// Țintele din Dezvoltator grupate pe proiect (node_modules, build-uri, cache-uri ale aceluiași folder).
+struct ProjectsList: View {
+    @ObservedObject var store: RecommendationsStore
+    @ObservedObject var flow: CleanFlow
+    let items: [CleanTarget]
+    static let staleDays: Double = 90
+
+    private struct Project: Identifiable {
+        let id: String
+        let last: Date
+        let items: [CleanTarget]
+        let total: Int64
+    }
+
+    private func makeProjects() -> [Project] {
+        var byPath: [String: [CleanTarget]] = [:]
+        for t in items { if let p = t.project { byPath[p, default: []].append(t) } }
+        var list: [Project] = []
+        for (path, its) in byPath {
+            let total: Int64 = its.reduce(Int64(0)) { acc, t in acc + (store.sizes[t.id] ?? 0) }
+            let pending = its.contains { t in store.sizes[t.id] == nil }
+            guard total > 0 || pending else { continue }
+            let last: Date = its.compactMap(\.lastActive).max() ?? .distantPast
+            list.append(Project(id: path, last: last, items: its, total: total))
+        }
+        return list.sorted { a, b in a.total != b.total ? a.total > b.total : a.id < b.id }
+    }
+
+    var body: some View {
+        let projects = makeProjects()
+        let cutoff = Date().addingTimeInterval(-Self.staleDays * 24 * 3600)
+        // Doar ce e „Sigur”: artefactele marcate „Atenție” (medii virtuale, vendor…) nu intră în curățarea rapidă.
+        let stale = projects.filter { $0.last < cutoff }.flatMap(\.items)
+            .filter { $0.risk == .safe && (store.sizes[$0.id] ?? 0) > 0 && !store.done.contains($0.id) }
+        let staleBytes = stale.reduce(Int64(0)) { $0 + (store.sizes[$1.id] ?? 0) }
+        let loose = items.count - projects.reduce(0) { $0 + $1.items.count }
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("\(projects.count) proiecte").fontWeight(.bold)
+                    Text(loose > 0 ? tr("Cache-urile globale (\(loose)) sunt în vederea pe categorii.") : tr("Doar folderele care se pot reface."))
+                        .font(.system(size: 12)).foregroundStyle(Theme.muted)
+                }
+                Spacer()
+                Button {
+                    flow.start(ids: stale.map(\.id))
+                } label: {
+                    Label(tr("Curăță proiectele inactive de 90+ zile · \(Fmt.bytes(staleBytes))"), systemImage: "clock.arrow.circlepath")
+                }
+                .buttonStyle(SecondaryButtonStyle(height: 32))
+                .disabled(stale.isEmpty || flow.running)
+                .help(tr("Doar elementele „Sigur” din proiectele neatinse de cel puțin 90 de zile."))
+            }
+            .padding(.horizontal, 24).padding(.vertical, 12)
+            Rectangle().fill(Theme.lineSoft).frame(height: 1)
+            if projects.isEmpty {
+                Text(store.scanningNodeModules ? tr("Caut proiectele…") : tr("Niciun proiect cu foldere de curățat."))
+                    .foregroundStyle(Theme.muted).frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(projects) { p in
+                            row(p)
+                            Rectangle().fill(Theme.lineSoft).frame(height: 1)
+                        }
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.card)
+    }
+
+    private func location(_ path: String) -> String {
+        Paths.underHome(path) ? "~/" + Paths.relative(path, to: Paths.home) : path
+    }
+
+    private func artifactChip(_ t: CleanTarget) -> some View {
+        let size: Int64 = store.sizes[t.id] ?? 0
+        let label: String = (t.artifact ?? t.name) + " · " + Fmt.bytes(size)
+        let border: Color = t.risk == .safe ? Theme.line : Theme.care.opacity(0.6)
+        return Text(label)
+            .font(.system(size: 11.5, weight: .medium)).monospacedDigit()
+            .padding(.horizontal, 8).frame(height: 22)
+            .background(Capsule().fill(Theme.ground))
+            .overlay(Capsule().strokeBorder(border))
+            .opacity(store.done.contains(t.id) ? 0.5 : 1)
+            .help(t.desc)
+    }
+
+    private func row(_ p: Project) -> some View {
+        let ids = p.items.filter { (store.sizes[$0.id] ?? 0) > 0 && !store.done.contains($0.id) }.map(\.id)
+        let on = ids.filter { store.selected.contains($0) }.count
+        let days = Int(Date().timeIntervalSince(p.last) / (24 * 3600))
+        let stale = Double(days) >= Self.staleDays
+        return HStack(alignment: .top, spacing: 14) {
+            Toggle("", isOn: Binding(
+                get: { !ids.isEmpty && on == ids.count },
+                set: { v in if v { store.selected.formUnion(ids) } else { store.selected.subtract(ids) } }))
+                .toggleStyle(.checkbox).labelsHidden()
+                .disabled(ids.isEmpty)
+                .accessibilityLabel(Text((p.id as NSString).lastPathComponent))
+                .padding(.top, 2)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    Text((p.id as NSString).lastPathComponent).fontWeight(.semibold).lineLimit(1)
+                    if p.items.contains(where: \.external) {
+                        Pill(text: tr("Extern"), bg: Theme.extBg, fg: Theme.extFg, icon: "externaldrive")
+                    }
+                    if stale { Pill(text: tr("Inactiv"), bg: Theme.safeBg, fg: Theme.safeFg, icon: "moon.zzz") }
+                }
+                Text(location(p.id)).font(.system(size: 12)).foregroundStyle(Theme.muted).lineLimit(1).truncationMode(.middle)
+                    .help(p.id)
+                HStack(spacing: 6) {
+                    ForEach(p.items) { t in artifactChip(t) }
+                }
+                .padding(.top, 2)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .trailing, spacing: 3) {
+                Text(Fmt.bytes(p.total)).font(.system(size: 15, weight: .bold)).monospacedDigit()
+                Text(p.last == .distantPast ? "—" : days == 0 ? tr("activ azi") : tr("activ acum \(days) zile"))
+                    .font(.system(size: 12)).foregroundStyle(stale ? Theme.safeFg : Theme.muted)
+            }
+            .frame(width: 140, alignment: .trailing)
+        }
+        .padding(.horizontal, 24).padding(.vertical, 12)
+        .togglesCheckbox(enabled: !ids.isEmpty) {
+            if on == ids.count { store.selected.subtract(ids) } else { store.selected.formUnion(ids) }
+        }
+    }
+}
+
+/// Întrebarea de la prima pornire.
+struct DevModeQuestion: View {
+    let done: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Image(systemName: "hammer")
+                .font(.system(size: 20, weight: .semibold))
+                .frame(width: 44, height: 44)
+                .background(RoundedRectangle(cornerRadius: 12).fill(Theme.extBg))
+                .foregroundStyle(Theme.extFg)
+                .accessibilityHidden(true)
+            Text("Ești dezvoltator?").font(.system(size: 19, weight: .bold))
+            Text("Dacă da, apare secțiunea Dezvoltator: cache-uri de pachete, build-uri din proiecte, simulatoare și versiuni vechi de unelte, pentru orice limbaj (JavaScript, Python, Rust, Go, Java, PHP, .NET, C++ și multe altele). Dacă nu, aplicația nu le caută deloc.")
+                .font(.system(size: 13)).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true)
+            Text("Poți schimba oricând din Setări.").font(.system(size: 12)).foregroundStyle(Theme.muted)
+            HStack(spacing: 8) {
+                Spacer()
+                Button("Nu") { answer(false) }.buttonStyle(SecondaryButtonStyle(height: 36))
+                Button("Da, sunt dezvoltator") { answer(true) }.buttonStyle(PrimaryButtonStyle(height: 36))
+                    .keyboardShortcut(.defaultAction)
+            }
+            .padding(.top, 6)
+        }
+        .padding(24)
+        .frame(width: 460)
+    }
+
+    private func answer(_ dev: Bool) {
+        Profile.answer(developer: dev)
+        done()
     }
 }
 
@@ -813,6 +1110,10 @@ final class CleanFlow: ObservableObject {
             }
             let skipped = p.blockers.filter { !chosen.map(\.id).contains($0.id) }
             running = false
+            let cleaned = p.targets + chosen.flatMap(\.targets)
+            HistoryStore.shared.record(.clean, title: cleaned.count == 1 ? cleaned[0].name : tr("\(cleaned.count) elemente curățate"),
+                                       detail: cleaned.count == 1 ? trKey(cleaned[0].group) : cleaned.prefix(4).map(\.name).joined(separator: ", "),
+                                       bytes: freed, trashed: trashed)
             let note = trashed ? "\n" + tr("Fișierele mutate la Coș eliberează spațiu după golirea Coșului.") : ""
             let skipNote = skipped.isEmpty ? "" : "\n" + tr("Sărite (rulează): \(skipped.map(\.name).joined(separator: ", ")).")
             if errors.isEmpty {
@@ -838,19 +1139,19 @@ private struct CleanFlowModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .onAppear { flow.rec = rec }
-            .sheet(item: $flow.plan) { p in CleanConfirmSheet(plan: p, flow: flow) }
-            .alert(Text("Unele aplicații nu s-au închis"),
-                   isPresented: Binding(get: { flow.forcePlan != nil }, set: { if !$0 { flow.forcePlan = nil } }),
-                   presenting: flow.forcePlan) { f in
-                Button("Forțează închiderea", role: .destructive) { flow.confirm(f.plan, quit: f.quit, force: true) }
-                Button("Anulează", role: .cancel) { flow.forcePlan = nil }
-            } message: { _ in
-                Text("Probabil așteaptă un răspuns (ex. salvarea unui document). Verifică fereastra lor sau forțează închiderea; modificările nesalvate se pierd.")
+            .appSheet(isPresented: Binding(get: { flow.plan != nil }, set: { if !$0 { flow.plan = nil } })) {
+                if let p = flow.plan { CleanConfirmSheet(plan: p, flow: flow) }
             }
-            .alert(flow.message?.title ?? "",
-                   isPresented: Binding(get: { flow.message != nil }, set: { if !$0 { flow.message = nil } })) {
-                Button("OK") { flow.message = nil }
-            } message: { Text(flow.message?.body ?? "") }
+            .appDialog(isPresented: Binding(get: { flow.forcePlan != nil }, set: { if !$0 { flow.forcePlan = nil } }),
+                       title: { tr("Unele aplicații nu s-au închis") },
+                       message: { tr("Probabil așteaptă un răspuns (ex. salvarea unui document). Verifică fereastra lor sau forțează închiderea; modificările nesalvate se pierd.") },
+                       buttons: {
+                           let f = flow.forcePlan
+                           return [DialogButton(title: tr("Forțează închiderea"), kind: .destructive) {
+                                       if let f { flow.confirm(f.plan, quit: f.quit, force: true) }
+                                   }, .cancel()]
+                       })
+            .appMessage($flow.message)
             .overlay {
                 if flow.running {
                     ProgressView().controlSize(.large)
@@ -880,9 +1181,9 @@ struct CleanConfirmSheet: View {
             Text(careCount > 0
                  ? tr("\(included.count) elemente, din care \(careCount) marcate „Atenție”. Ce se șterge definitiv nu mai poate fi recuperat.")
                  : tr("\(included.count) elemente, toate sigure: se refac singure la nevoie."))
-                .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                .foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true)
             ScrollView {
-                VStack(alignment: .leading, spacing: 4) {
+                LazyVStack(alignment: .leading, spacing: 4) {
                     ForEach(plan.targets) { t in targetRow(t) }
                 }
             }
@@ -896,9 +1197,10 @@ struct CleanConfirmSheet: View {
             }
             HStack {
                 Spacer()
-                Button("Anulează", role: .cancel) { flow.plan = nil }.keyboardShortcut(.cancelAction)
+                Button("Anulează") { flow.plan = nil }.keyboardShortcut(.cancelAction)
+                    .buttonStyle(SecondaryButtonStyle(height: 36))
                 Button(quitting ? tr("Închide și curăță") : tr("Curăță")) { flow.confirm(plan, quit: quit) }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(PrimaryButtonStyle(height: 36))
                     .keyboardShortcut(.defaultAction)
                     .disabled(included.isEmpty)
             }
@@ -912,7 +1214,7 @@ struct CleanConfirmSheet: View {
             Text(t.name).lineLimit(1)
             RiskMark(risk: t.risk)
             Spacer()
-            Text(Fmt.bytes(flow.rec?.sizes[t.id])).monospacedDigit().foregroundStyle(.secondary)
+            Text(Fmt.bytes(flow.rec?.sizes[t.id])).monospacedDigit().foregroundStyle(Theme.muted)
         }
         .font(.callout)
     }
@@ -929,10 +1231,10 @@ struct CleanConfirmSheet: View {
                 .toggleStyle(.checkbox)
             } else {
                 Label { Text("\(b.name) — închide-l manual").lineLimit(1) } icon: { Image(systemName: "exclamationmark.triangle") }
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Theme.careFg)
             }
             Spacer()
-            Text(Fmt.bytes(size)).monospacedDigit().foregroundStyle(.secondary)
+            Text(Fmt.bytes(size)).monospacedDigit().foregroundStyle(Theme.muted)
         }
         .font(.callout)
         .help(b.targets.map(\.name).joined(separator: "\n"))
@@ -994,13 +1296,18 @@ enum Prefs {
     static let rescanHoursKey = "rescanHours"
     /// Sub câți GB liberi vine notificarea (0 = fără notificare).
     static let lowSpaceGBKey = "lowSpaceGB"
+    /// Notificare când RAM-ul liber scade sub 5% sau procesorul liber sub 10%.
+    static let loadAlertsKey = "loadAlerts"
 
     static var rescanHours: Int { UserDefaults.standard.object(forKey: rescanHoursKey) as? Int ?? 6 }
-    static var lowSpaceGB: Int { UserDefaults.standard.object(forKey: lowSpaceGBKey) as? Int ?? 10 }
+    static var lowSpaceGB: Int { UserDefaults.standard.object(forKey: lowSpaceGBKey) as? Int ?? 4 }
+    static var loadAlerts: Bool { UserDefaults.standard.object(forKey: loadAlertsKey) as? Bool ?? true }
 }
 
 extension Notification.Name {
     static let openCleanerSettings = Notification.Name("openCleanerSettings")
+    /// Deschide o secțiune (`Section.rawValue` în `object`), de exemplu din click pe notificare.
+    static let openCleanerSection = Notification.Name("openCleanerSection")
 }
 
 /// Setările sunt o pagină a ferestrei principale (⌘, sau din bara de meniu o deschid acolo).
@@ -1021,14 +1328,15 @@ struct OpenSettingsButton<Label: View>: View {
 struct SettingsPage: View {
     @ObservedObject var update: UpdateStore
     @AppStorage(Profile.devModeKey) private var devMode = false
-    @AppStorage(Profile.techsKey) private var techsRaw = ""
+    @AppStorage(Profile.hiddenKey) private var hiddenRaw = ""
     @AppStorage(UpdateStore.autoCheckKey) private var autoUpdate = true
     @State private var language = AppLanguage.current
     @State private var languageChanged = false
     @State private var atLogin = LoginItem.enabled
     @State private var hasFDA = FullDiskAccess.granted()
     @AppStorage(Prefs.rescanHoursKey) private var rescanHours = 6
-    @AppStorage(Prefs.lowSpaceGBKey) private var lowSpaceGB = 10
+    @AppStorage(Prefs.lowSpaceGBKey) private var lowSpaceGB = 4
+    @AppStorage(Prefs.loadAlertsKey) private var loadAlerts = true
 
     var body: some View {
         ScrollView {
@@ -1065,31 +1373,27 @@ struct SettingsPage: View {
                     }
                 }
                 group("PROFIL") {
-                    row("Sunt dezvoltator", Text("Adaugă secțiunea Dezvoltator: cache-uri, build-uri și dependențe ale uneltelor de programare. Oprit, acestea nu se mai caută.")) {
-                        Toggle("", isOn: Binding(get: { devMode }, set: { on in
-                            devMode = on
-                            profileChanged()
-                        }))
-                        .toggleStyle(.switch).labelsHidden().tint(Theme.accentFill)
+                    row("Sunt dezvoltator", Text("Adaugă secțiunea Dezvoltator: cache-uri, build-uri și versiuni vechi de unelte, pentru orice limbaj de programare. Oprit, acestea nu se mai caută.")) {
+                        Toggle("", isOn: Binding(get: { devMode }, set: { on in Profile.answer(developer: on) }))
+                            .toggleStyle(.switch).labelsHidden().tint(Theme.accentFill)
                     }
-                    if devMode {
+                    let hidden = Tech.allCases.filter(Profile.decode(hiddenRaw).contains)
+                    if devMode && !hidden.isEmpty {
                         divider
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Tehnologii").fontWeight(.semibold)
-                                    Text("Se caută doar ce ține de tehnologiile alese. Au fost detectate automat din ce e instalat.")
-                                        .font(.system(size: 12.5)).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true)
-                                }
-                                Spacer()
-                                Button("Detectează din nou") {
-                                    techsRaw = Profile.encode(Profile.detected())
-                                    profileChanged()
-                                }
-                                .buttonStyle(SecondaryButtonStyle(height: 32))
+                        VStack(alignment: .leading, spacing: 10) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Ecosisteme ascunse").fontWeight(.semibold)
+                                Text("Nu se caută și nu apar în secțiunea Dezvoltator.")
+                                    .font(.system(size: 12.5)).foregroundStyle(Theme.muted)
                             }
-                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 168), spacing: 8)], alignment: .leading, spacing: 8) {
-                                ForEach(Tech.allCases) { t in techChip(t) }
+                            ForEach(hidden) { t in
+                                HStack(spacing: 10) {
+                                    Image(systemName: t.icon).frame(width: 18).foregroundStyle(Theme.muted)
+                                    Text(t.title)
+                                    Spacer()
+                                    Button("Arată") { Profile.setHidden(t, false) }
+                                        .buttonStyle(SecondaryButtonStyle(height: 28))
+                                }
                             }
                         }
                         .padding(.horizontal, 18).padding(.vertical, 14)
@@ -1109,12 +1413,17 @@ struct SettingsPage: View {
                     row("Avertizează când spațiul liber scade sub", Text("Notificare macOS, o dată la fiecare coborâre sub prag.")) {
                         Picker("", selection: $lowSpaceGB) {
                             Text("Niciodată").tag(0)
+                            Text("4 GB").tag(4)
                             Text("5 GB").tag(5)
                             Text("10 GB").tag(10)
                             Text("20 GB").tag(20)
                             Text("50 GB").tag(50)
                         }
                         .labelsHidden().fixedSize()
+                    }
+                    divider
+                    row("Avertizează când Mac-ul e încărcat", Text("Notificare când RAM-ul liber scade sub 5% sau procesorul e liber sub 10% timp de un minut, cu aplicația care consumă cel mai mult.")) {
+                        Toggle("", isOn: $loadAlerts).toggleStyle(.switch).labelsHidden().tint(Theme.accentFill)
                     }
                 }
                 group("PERMISIUNI") {
@@ -1144,6 +1453,17 @@ struct SettingsPage: View {
                     row("Caută actualizări automat", Text("O dată pe zi, din GitHub Releases. Instalarea pornește doar când o confirmi.")) {
                         Toggle("", isOn: $autoUpdate).toggleStyle(.switch).labelsHidden().tint(Theme.accentFill)
                     }
+                    divider
+                    row("Cod sursă pe GitHub", Text("Gratuit și open source (licență MIT). Dacă îți e de folos, o stea pe GitHub îi ajută și pe alții să-l găsească. Acolo poți raporta și probleme.")) {
+                        HStack(spacing: 8) {
+                            Button("Raportează o problemă") { NSWorkspace.shared.open(UpdateStore.repoURL.appendingPathComponent("issues")) }
+                                .buttonStyle(SecondaryButtonStyle(height: 32))
+                            Button { NSWorkspace.shared.open(UpdateStore.repoURL) } label: {
+                                Label("Dă-ne o stea", systemImage: "star.fill")
+                            }
+                            .buttonStyle(PrimaryButtonStyle(height: 32))
+                        }
+                    }
                 }
             }
             .frame(maxWidth: 760, alignment: .leading)
@@ -1158,31 +1478,6 @@ struct SettingsPage: View {
 
     private var divider: some View { Rectangle().fill(Theme.lineSoft).frame(height: 1) }
 
-    private func profileChanged() {
-        NotificationCenter.default.post(name: .profileChanged, object: nil)
-    }
-
-    private func techChip(_ t: Tech) -> some View {
-        let techs = Profile.decode(techsRaw)
-        let on = techs.contains(t)
-        return Button {
-            techsRaw = Profile.encode(on ? techs.subtracting([t]) : techs.union([t]))
-            profileChanged()
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: on ? "checkmark.circle.fill" : "circle").font(.system(size: 13, weight: .medium))
-                Text(t.title).font(.system(size: 12.5, weight: .medium)).lineLimit(1).minimumScaleFactor(0.85)
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 10).frame(height: 32)
-            .background(RoundedRectangle(cornerRadius: 8).fill(on ? Theme.safeBg : Theme.ground))
-            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(on ? Theme.safeBg : Theme.line))
-            .foregroundStyle(on ? Theme.safeFg : Theme.muted)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(on ? .isSelected : [])
-    }
 
     /// Completează rândul cu versiunea: rezultatul ultimei verificări.
     private var updateStatus: String {

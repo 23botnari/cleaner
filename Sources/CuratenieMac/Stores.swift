@@ -26,8 +26,9 @@ final class RecommendationsStore: ObservableObject {
     private var generation = 0
     private(set) var lastScan: Date?
 
+    /// Cât se poate elibera pe discul intern (fără ce e pe discuri externe).
     var reclaimable: Int64 {
-        targets.reduce(0) { $0 + ($1.overlap ? 0 : (sizes[$1.id] ?? 0)) }
+        targets.reduce(0) { $0 + ($1.overlap || $1.external ? 0 : (sizes[$1.id] ?? 0)) }
     }
 
     var pendingCount: Int { targets.filter { sizes[$0.id] == nil }.count }
@@ -66,8 +67,9 @@ final class RecommendationsStore: ObservableObject {
 
     // Aceleași valori, dar doar pentru una din cele două liste: Dezvoltator (dev) sau Recomandări.
 
+    /// Recomandări: doar discul intern (e cifra din Prezentare). Dezvoltator: și proiectele de pe discuri externe.
     func reclaimable(dev: Bool) -> Int64 {
-        targets.reduce(0) { $0 + ($1.isDev == dev && !$1.overlap ? (sizes[$1.id] ?? 0) : 0) }
+        targets.reduce(0) { $0 + ($1.isDev == dev && !$1.overlap && (dev || !$1.external) ? (sizes[$1.id] ?? 0) : 0) }
     }
 
     func safeIDs(dev: Bool) -> [String] {
@@ -107,7 +109,7 @@ final class RecommendationsStore: ObservableObject {
                 func on(_ t: Tech, _ make: () -> [CleanTarget]) -> [CleanTarget] { techs.contains(t) ? make() : [] }
                 var all = Targets.staticTargets() + Targets.iosDeviceTargets() + Targets.downloadsTargets()
                     + Targets.timeMachineTargets() + Targets.browserTargets()
-                if !techs.isEmpty { all += Targets.devCacheTargets() }
+                if !techs.isEmpty { all += Targets.devCacheTargets() + Targets.toolVersionTargets() }
                 all += on(.claude, Targets.claudeTargets) + on(.docker, Targets.dockerTargets)
                     + on(.apple) { Targets.simRuntimeTargets() + Targets.unavailableSimTargets() }
                     + on(.android, Targets.androidTargets) + on(.tools, Targets.homebrewTargets) + on(.ai, Targets.aiModelTargets)

@@ -147,3 +147,11 @@ struct ScreenHeader<Trailing: View>: View {
         .padding(.horizontal, 28).padding(.top, 22).padding(.bottom, 14)
     }
 }
+
+extension View {
+    /// Click pe titlu (sau pe tot textul rândului) bifează / debifează, ca în listele macOS.
+    func togglesCheckbox(enabled: Bool = true, _ toggle: @escaping () -> Void) -> some View {
+        contentShape(Rectangle())
+            .onTapGesture { if enabled { toggle() } }
+    }
+}

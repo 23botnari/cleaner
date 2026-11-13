@@ -27,6 +27,7 @@ final class UpdateStore: ObservableObject {
     }
 
     static let repo = "23botnari/cleaner"
+    static let repoURL = URL(string: "https://github.com/\(repo)")!
     static let autoCheckKey = "updateAutoCheck"
     static let skippedKey = "updateSkippedVersion"
     private static let lastCheckKey = "updateLastCheck"

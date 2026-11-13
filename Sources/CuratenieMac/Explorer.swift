@@ -140,12 +140,16 @@ final class ExplorerStore: ObservableObject {
         }
     }
 
-    /// Bucățile căii de la home până la folderul curent, pentru navigare.
+    /// Rădăcina în care se află folderul curent: home sau discul extern.
+    var root: String { Paths.underHome(path) ? Paths.realHome : (Paths.externalRoot(path) ?? Paths.realHome) }
+
+    /// Bucățile căii de la rădăcină (home sau disc extern) până la folderul curent, pentru navigare.
     var breadcrumbs: [(name: String, path: String)] {
-        var out: [(String, String)] = [("Home", Paths.realHome)]
-        let rel = Paths.relative(path)
+        let base = root
+        var out: [(String, String)] = [(base == Paths.realHome ? "Home" : (base as NSString).lastPathComponent, base)]
+        let rel = Paths.relative(path, to: base)
         guard rel != "." else { return out }
-        var cur = Paths.realHome
+        var cur = base
         for part in rel.split(separator: "/") {
             cur = Paths.join(cur, String(part))
             out.append((String(part), cur))
@@ -155,8 +159,8 @@ final class ExplorerStore: ObservableObject {
 
     private func begin(_ p: String, mode: ExplorerMode) -> Int? {
         let rp = Paths.realpath(p)
-        guard Paths.underHome(rp) else {
-            error = tr("Poți explora doar folderul tău de utilizator.")
+        guard Paths.explorable(rp) else {
+            error = tr("Poți explora doar folderul tău de utilizator și discurile externe.")
             return nil
         }
         generation += 1
@@ -295,7 +299,7 @@ final class ExplorerStore: ObservableObject {
 
     func reveal(_ item: ExplorerItem) {
         let rp = Paths.resolvedParent(item.path)
-        guard Paths.underHome(rp) else { return }
+        guard Paths.explorable(rp) else { return }
         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: rp)])
     }
 
@@ -357,24 +361,23 @@ struct ExplorerView: View {
             Rectangle().fill(Theme.line).frame(height: 1)
             footer
         }
-        .confirmationDialog(trashTitle, isPresented: Binding(get: { !toTrash.isEmpty }, set: { if !$0 { toTrash = [] } }),
-                            titleVisibility: .visible) {
-            Button("Mută la Coș", role: .destructive) {
-                let r = store.moveToTrash(toTrash)
+        .appDialog(isPresented: Binding(get: { !toTrash.isEmpty }, set: { if !$0 { toTrash = [] } }),
+                   title: { trashTitle }, message: { trashMessage },
+                   buttons: {
+            [DialogButton(title: tr("Mută la Coș"), kind: .destructive) {
+                let list = toTrash
+                let r = store.moveToTrash(list)
                 toTrash = []
                 onChange()
+                HistoryStore.shared.record(.trash, title: r.moved == 1 && list.count == 1 ? list[0].name : tr("\(r.moved) elemente mutate la Coș"),
+                                           detail: list.count == 1 ? list[0].location : store.path, bytes: r.freed, trashed: true)
                 if !r.errors.isEmpty {
                     message = (tr("Unele elemente nu au fost mutate"),
                                tr("Mutate: \(r.moved) (\(Fmt.bytes(r.freed))).") + "\n\n" + r.errors.prefix(12).joined(separator: "\n"))
                 }
-            }
-            Button("Anulează", role: .cancel) { toTrash = [] }
-        } message: {
-            Text(trashMessage)
-        }
-        .alert(message?.title ?? "", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
-            Button("OK") { message = nil }
-        } message: { Text(message?.body ?? "") }
+            }, .cancel()]
+        })
+        .appMessage($message)
     }
 
     private var trashMessage: String {
@@ -420,16 +423,40 @@ struct ExplorerView: View {
                 }
                 Spacer()
                 Text("Caută în").font(.system(size: 13)).foregroundStyle(Theme.muted)
-                Menu((store.path == Paths.realHome ? "~" : "~/" + Paths.relative(store.path))) {
+                Menu(store.root != Paths.realHome ? (store.root as NSString).lastPathComponent
+                     : store.path == Paths.realHome ? "~" : "~/" + Paths.relative(store.path)) {
                     ForEach(["", "Desktop", "Downloads", "Documents", "Library", "Movies"], id: \.self) { sub in
                         Button(sub.isEmpty ? "Home (~)" : "~/" + sub) {
                             store.path = sub.isEmpty ? Paths.realHome : Paths.join(Paths.realHome, sub)
                             store.findBigFiles()
                         }
                     }
+                    let volumes = Paths.externalVolumes()
+                    if !volumes.isEmpty {
+                        Divider()
+                        ForEach(volumes, id: \.self) { v in
+                            Button { store.path = v; store.findBigFiles() } label: {
+                                Label((v as NSString).lastPathComponent, systemImage: "externaldrive")
+                            }
+                        }
+                    }
                 }
                 .fixedSize()
             } else {
+                let volumes = Paths.externalVolumes()
+                if !volumes.isEmpty {
+                    Menu {
+                        Button { store.open(Paths.realHome) } label: { Label("Home (~)", systemImage: "house") }
+                        ForEach(volumes, id: \.self) { v in
+                            Button { store.open(v) } label: { Label((v as NSString).lastPathComponent, systemImage: "externaldrive") }
+                        }
+                    } label: {
+                        Image(systemName: store.root == Paths.realHome ? "house" : "externaldrive")
+                    }
+                    .fixedSize()
+                    .help(tr("Alege discul"))
+                    .accessibilityLabel(Text("Alege discul"))
+                }
                 ForEach(Array(store.breadcrumbs.enumerated()), id: \.offset) { i, c in
                     if i > 0 { Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold)).foregroundStyle(Theme.faint) }
                     Button(c.name) { store.open(c.path) }
@@ -459,13 +486,9 @@ struct ExplorerView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity).padding()
         } else if store.loading {
-            VStack(spacing: 10) {
-                ProgressView()
-                if store.mode == .bigFiles {
-                    Text("Caut fișiere mari în „\((store.path as NSString).lastPathComponent)”…").foregroundStyle(Theme.muted)
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            SkeletonRows(label: store.mode == .bigFiles
+                         ? tr("Caut fișiere mari în „\((store.path as NSString).lastPathComponent)”…") : nil)
+                .padding(.horizontal, 28)
         } else {
             let items = store.visibleItems.filter { store.mode == .folder || matches($0, filter) }
             let maxSize = Double(max(1, items.compactMap(\.size).max() ?? 1))
@@ -586,7 +609,7 @@ struct ExplorerView: View {
             .frame(width: 72, alignment: .trailing)
         }
         .padding(.horizontal, 18).padding(.vertical, 11)
-        .contentShape(Rectangle())
+        .togglesCheckbox(enabled: !locked) { store.toggle(it) }
         .contextMenu {
             if it.isDir && !isPkg { Button("Deschide") { store.open(it.path) } }
             Button("Arată în Finder") { store.reveal(it) }

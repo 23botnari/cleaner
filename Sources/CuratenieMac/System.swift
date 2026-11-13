@@ -112,6 +112,36 @@ enum Paths {
         real == realHome || real.hasPrefix(realHome + "/")
     }
 
+    /// Rădăcina volumului extern pe care stă calea. nil = disc intern, volum doar-citire, de rețea sau backup Time Machine.
+    static func externalRoot(_ real: String) -> String? {
+        guard real.hasPrefix("/Volumes/") else { return nil }
+        let parts = real.split(separator: "/", maxSplits: 2, omittingEmptySubsequences: true)
+        guard parts.count >= 2 else { return nil }
+        let root = "/Volumes/" + parts[1]
+        guard isDir(root), !isSymlink(root), !lexists(join(root, "Backups.backupdb")) else { return nil }
+        let keys: Set<URLResourceKey> = [.volumeIsInternalKey, .volumeIsReadOnlyKey, .volumeIsLocalKey, .volumeIsRootFileSystemKey]
+        guard let v = try? URL(fileURLWithPath: root).resourceValues(forKeys: keys),
+              v.volumeIsRootFileSystem != true, v.volumeIsInternal != true, v.volumeIsReadOnly != true,
+              v.volumeIsLocal == true else { return nil }
+        return root
+    }
+
+    /// Discurile externe montate pe care se poate scrie.
+    static func externalVolumes() -> [String] {
+        children("/Volumes").sorted().filter { externalRoot($0) == $0 }
+    }
+
+    /// Coșul utilizatorului curent de pe un disc extern.
+    static func volumeTrash(_ root: String) -> String { join(root, ".Trashes", String(getuid())) }
+
+    /// Unde are voie Exploratorul: home sau un disc extern.
+    static func explorable(_ real: String) -> Bool {
+        underHome(real) || externalRoot(real) != nil
+    }
+
+    /// Foldere de sistem din rădăcina unui volum (Windows / exFAT); cele ascunse sunt protejate oricum.
+    static let volumeSystemDirs: Set<String> = ["System Volume Information", "$RECYCLE.BIN", "RECYCLER"]
+
     /// Foldere care nu se șterg niciodată, indiferent de cerere.
     static let protected: Set<String> = Set([
         home, hp("Library"), hp("Library", "Application Support"), hp("Library", "Group Containers"),
@@ -130,6 +160,13 @@ enum Paths {
     static func deletable(_ p: String) -> Bool {
         let full = resolvedParent(p)
         if full.hasPrefix(realTmp + "/") { return true }
+        if let root = externalRoot(full) {
+            // Pe un disc extern: orice în afară de rădăcină și de metadatele volumului (.Trashes, .Spotlight-V100…).
+            guard full != root, let top = relative(full, to: root).split(separator: "/").first else { return false }
+            // Conținutul Coșului propriu de pe disc se poate goli.
+            if full.hasPrefix(volumeTrash(root) + "/") { return true }
+            return !top.hasPrefix(".") && !volumeSystemDirs.contains(String(top))
+        }
         guard underHome(full), full != realHome, !protected.contains(full) else { return false }
         if protectedTrees.contains(where: { full.hasPrefix($0 + "/") }) { return false }
         let rel = relative(full)
@@ -226,10 +263,17 @@ struct QuitPrompt: Identifiable {
 
 extension View {
     func quitPrompt(_ prompt: Binding<QuitPrompt?>, message: Binding<(title: String, body: String)?>) -> some View {
-        alert(prompt.wrappedValue.map { $0.forced ? tr("„\($0.name)” nu s-a închis") : tr("„\($0.name)” rulează") } ?? "",
-              isPresented: Binding(get: { prompt.wrappedValue != nil }, set: { if !$0 { prompt.wrappedValue = nil } }),
-              presenting: prompt.wrappedValue) { p in
-            Button(p.forced ? tr("Forțează închiderea") : tr("Închide \(p.name)"), role: p.forced ? .destructive : nil) {
+        appDialog(isPresented: Binding(get: { prompt.wrappedValue != nil }, set: { if !$0 { prompt.wrappedValue = nil } }),
+                  title: { prompt.wrappedValue.map { $0.forced ? tr("„\($0.name)” nu s-a închis") : tr("„\($0.name)” rulează") } ?? "" },
+                  message: {
+                      guard let p = prompt.wrappedValue else { return "" }
+                      return p.forced
+                          ? tr("Probabil așteaptă un răspuns (ex. salvarea unui document). Verifică fereastra ei sau forțează închiderea; modificările nesalvate se pierd.")
+                          : tr("Trebuie închisă înainte de \(p.action). O închid acum, apoi continui.")
+                  },
+                  buttons: {
+            guard let p = prompt.wrappedValue else { return [.cancel()] }
+            return [DialogButton(title: p.forced ? tr("Forțează închiderea") : tr("Închide \(p.name)"), kind: p.forced ? .destructive : .primary) {
                 prompt.wrappedValue = nil
                 Task { @MainActor in
                     if await AppQuitter.quit(p.apps, force: p.forced) {
@@ -242,13 +286,8 @@ extension View {
                         message.wrappedValue = (tr("„\(p.name)” încă rulează"), tr("Închide-o manual, apoi încearcă din nou."))
                     }
                 }
-            }
-            Button("Anulează", role: .cancel) { prompt.wrappedValue = nil }
-        } message: { p in
-            Text(p.forced
-                 ? tr("Probabil așteaptă un răspuns (ex. salvarea unui document). Verifică fereastra ei sau forțează închiderea; modificările nesalvate se pierd.")
-                 : tr("Trebuie închisă înainte de \(p.action). O închid acum, apoi continui."))
-        }
+            }, .cancel()]
+        })
     }
 }
 

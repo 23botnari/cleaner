@@ -181,14 +181,18 @@ enum AppScanner {
             .sorted { $0.size > $1.size }
     }
 
-    /// Reguli pentru .app în afara home-ului: doar în /Applications sau ~/Applications, pe discul intern, fără Apple.
+    /// Reguli pentru .app: în /Applications sau ~/Applications pe discul intern, ori oriunde pe un disc extern; fără Apple.
     static func uninstallable(_ app: AppEntry) -> String? {
         let real = Paths.realpath(app.path)
         guard real.hasSuffix(".app"), Paths.isDir(real) else { return tr("Nu e un pachet de aplicație.") }
-        guard real.hasPrefix("/Applications/") || real.hasPrefix(Paths.realHome + "/Applications/") else {
-            return tr("Dezinstalez doar aplicații din /Applications sau ~/Applications.")
+        if Paths.externalRoot(real) != nil {
+            guard Paths.deletable(real) else { return tr("Aplicația e într-un folder protejat al discului.") }
+        } else {
+            guard real.hasPrefix("/Applications/") || real.hasPrefix(Paths.realHome + "/Applications/") else {
+                return tr("Dezinstalez doar aplicații din /Applications, ~/Applications sau de pe un disc extern.")
+            }
+            guard VolumeInfo.of(real).isInternal else { return tr("Discul aplicației e doar-citire; nu o pot muta la Coș.") }
         }
-        guard VolumeInfo.of(real).isInternal else { return tr("Aplicația e pe un disc extern; nu o ating.") }
         guard app.bundleID != "com.apple.Safari", app.bundleID != ownBundleID else { return tr("Aplicație de sistem.") }
         return nil
     }
@@ -308,7 +312,7 @@ struct AppsView: View {
                 .lineLimit(1)
                 .padding(.horizontal, 28).padding(.bottom, 10)
                 if store.loading {
-                    ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                    SkeletonRows(icon: 40).padding(.leading, 28).padding(.trailing, 16)
                 } else {
                     ScrollView {
                         LazyVStack(spacing: 6) {
@@ -335,9 +339,7 @@ struct AppsView: View {
             .frame(maxHeight: .infinity)
             .background(Theme.card)
         }
-        .alert(message?.title ?? "", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
-            Button("OK") { message = nil }
-        } message: { Text(message?.body ?? "") }
+        .appMessage($message)
         .quitPrompt($quit, message: $message)
     }
 
@@ -415,6 +417,7 @@ struct AppsView: View {
             }
             refresh += 1
             onChange()
+            HistoryStore.shared.record(.cache, title: tr("Cache „\(a.name)”"), bytes: r.freed)
             message = r.errors.isEmpty
                 ? (tr("Cache curățat"), tr("Am eliberat \(Fmt.bytes(r.freed)) din cache-ul „\(a.name)”. Se reface la nevoie."))
                 : (tr("Curățat parțial"), tr("Am eliberat \(Fmt.bytes(r.freed)).") + "\n\n" + r.errors.prefix(12).joined(separator: "\n"))
@@ -434,6 +437,7 @@ struct AppsView: View {
                 store.remove(a.path)
                 selectedID = nil
                 onChange()
+                HistoryStore.shared.record(.uninstall, title: tr("„\(a.name)” dezinstalată"), detail: a.path, bytes: freed, trashed: true)
                 message = errors.isEmpty
                     ? (tr("„\(a.name)” a fost mutată la Coș"), tr("\(Fmt.bytes(freed)) se eliberează după golirea Coșului."))
                     : (tr("Dezinstalare parțială"), errors.joined(separator: "\n"))
@@ -519,7 +523,7 @@ struct AppInspector: View {
                 VStack(alignment: .leading, spacing: 12) {
                     if !app.volume.isInternal {
                         notice("externaldrive", Theme.extBg, Theme.extFg,
-                               tr("Pe \(app.volume.name). Nu ocupă loc pe Mac și nu se dezinstalează de aici."))
+                               tr("Pe \(app.volume.name). Nu ocupă loc pe Mac; dezinstalarea eliberează spațiu pe acel disc, după golirea Coșului."))
                     }
                     if app.hasSystemParts {
                         notice("exclamationmark.triangle", Theme.careBg, Theme.careFg,
@@ -550,6 +554,9 @@ struct AppInspector: View {
                                     Text(Fmt.bytes(l.size)).fontWeight(.semibold).monospacedDigit()
                                 }
                                 .font(.system(size: 13))
+                                .togglesCheckbox {
+                                    if keep.contains(l.path) { keep.remove(l.path) } else { keep.insert(l.path) }
+                                }
                             }
                             Text("Debifează datele pe care vrei să le păstrezi (setări, conturi, istoric). Totul se poate recupera din Coș.")
                                 .font(.system(size: 12)).foregroundStyle(Theme.muted)
@@ -585,7 +592,7 @@ struct AppInspector: View {
                     .buttonStyle(SecondaryButtonStyle())
                     .help(tr("Arată în Finder"))
                     .accessibilityLabel(Text("Arată în Finder"))
-                    Button(blocked != nil ? tr("Pe disc extern") : running ? tr("Închide și dezinstalează") : tr("Dezinstalează")) {
+                    Button(blocked != nil ? tr("Nu se poate dezinstala") : running ? tr("Închide și dezinstalează") : tr("Dezinstalează")) {
                         confirming = true
                     }
                     .buttonStyle(PrimaryButtonStyle(tint: Theme.danger, fill: true))
@@ -601,18 +608,12 @@ struct AppInspector: View {
             leftovers = await offMain { AppScanner.leftovers(for: a) }
             caches = await c
         }
-        .confirmationDialog(Text("Curăți cache-ul „\(app.name)”?"), isPresented: $confirmingCache, titleVisibility: .visible) {
-            Button("Curăță cache") { cleanCache(caches ?? []) }
-            Button("Anulează", role: .cancel) {}
-        } message: {
-            Text("\(Fmt.bytes((caches ?? []).reduce(0) { $0 + $1.size })) din \((caches ?? []).count) foldere. Se șterge definitiv, dar aplicația îl reface singură; setările și conturile rămân.")
-        }
-        .confirmationDialog(Text("Muți „\(app.name)” la Coș?"), isPresented: $confirming, titleVisibility: .visible) {
-            Button("Dezinstalează", role: .destructive) { uninstall(chosen) }
-            Button("Anulează", role: .cancel) {}
-        } message: {
-            Text("\(Fmt.bytes(bytes)) în \(chosen.count + 1) elemente. Totul se poate recupera din Coș până îl golești.")
-        }
+        .appDialog(isPresented: $confirmingCache, title: { tr("Curăți cache-ul „\(app.name)”?") },
+                   message: { tr("\(Fmt.bytes((caches ?? []).reduce(0) { $0 + $1.size })) din \((caches ?? []).count) foldere. Se șterge definitiv, dar aplicația îl reface singură; setările și conturile rămân.") },
+                   buttons: { [DialogButton(title: tr("Curăță cache"), kind: .primary) { cleanCache(caches ?? []) }, .cancel()] })
+        .appDialog(isPresented: $confirming, title: { tr("Muți „\(app.name)” la Coș?") },
+                   message: { tr("\(Fmt.bytes(bytes)) în \(chosen.count + 1) elemente. Totul se poate recupera din Coș până îl golești.") },
+                   buttons: { [DialogButton(title: tr("Dezinstalează"), kind: .destructive) { uninstall(chosen) }, .cancel()] })
     }
 
     @ViewBuilder
