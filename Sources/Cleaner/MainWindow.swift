@@ -103,7 +103,7 @@ struct ContentView: View {
     var body: some View {
         HStack(spacing: 0) {
             AppSidebar(section: $section, rec: rec, update: update, hasFDA: hasFDA)
-                .frame(width: 264)
+                .frame(width: 284)
             Rectangle().fill(Theme.sidebarLine).frame(width: 1)
             VStack(spacing: 0) {
                 if !hasFDA { FDABanner { hasFDA = FullDiskAccess.granted() } }
@@ -573,10 +573,8 @@ struct OverviewView: View {
                     .card(padding: 16)
                 }
             }
-            .frame(maxWidth: 1240, alignment: .leading)
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { contentWidth = $0 }
             .padding(.horizontal, 28).padding(.bottom, 28)
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
