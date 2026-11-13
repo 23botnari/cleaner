@@ -37,9 +37,17 @@ On first launch the app asks whether you are a developer. If not, the Developer 
 
 ## Install
 
-1. Download the DMG from [Releases](../../releases/latest) and drag **Cleaner MacOS** to Applications.
+1. **[Download CleanerMacOS.dmg](https://github.com/23botnari/cleaner/releases/latest/download/CleanerMacOS.dmg)** (latest release, see [all releases](../../releases)) and drag **Cleaner MacOS** to Applications.
 2. On first launch, right-click the app and choose **Open**, because it is not notarized.
 3. Grant **Full Disk Access** in *System Settings → Privacy & Security* so that sizes are accurate.
+
+### Homebrew
+
+```bash
+brew tap 23botnari/cleaner
+brew trust 23botnari/cleaner   # Homebrew 7+ only
+brew install --cask cleaner-macos
+```
 
 ## Build from source
 
