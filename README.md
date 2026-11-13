@@ -98,7 +98,7 @@
 ```bash
 brew tap 23botnari/cleaner
 brew trust 23botnari/cleaner   # Homebrew 7+ only
-brew install --cask cleaner-macos
+brew install --cask cleaner
 ```
 
 Then:
