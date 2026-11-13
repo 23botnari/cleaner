@@ -18,6 +18,6 @@
 	<key>NSHighResolutionCapable</key><true/>
 	<key>NSPrincipalClass</key><string>NSApplication</string>
 	<key>NSAppleEventsUsageDescription</key><string>Cleaner MacOS cere Finder-ului să mute la Coș aplicațiile care aparțin altui utilizator (de ex. din App Store) și resturile din /Library sau protejate de macOS. Finder îți va cere parola de administrator.</string>
-	<key>NSHumanReadableCopyright</key><string>© 2026 Webit Factory</string>
+	<key>NSHumanReadableCopyright</key><string>© 2026 Webit Factory. MIT License.</string>
 </dict>
 </plist>
