@@ -529,9 +529,10 @@ struct ExplorerView: View {
                 Text(store.selection.isEmpty ? tr("Nimic selectat") : tr("\(store.selection.count) selectate · \(Fmt.bytes(store.selectedSize))"))
                     .fontWeight(.bold).monospacedDigit()
                 Text("Totul merge la Coș și se poate recupera; spațiul se eliberează după golirea Coșului.")
-                    .font(.system(size: 12)).foregroundStyle(Theme.muted).lineLimit(1)
+                    .font(.system(size: 12)).foregroundStyle(Theme.muted).lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            Spacer()
+            Spacer(minLength: 8)
             if !store.selection.isEmpty {
                 Button("Deselectează") { store.selection = [] }.buttonStyle(SecondaryButtonStyle())
             }

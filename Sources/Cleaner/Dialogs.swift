@@ -200,23 +200,28 @@ struct SkeletonRows: View {
                 }
                 .padding(.bottom, 12)
             }
-            VStack(spacing: 0) {
-                ForEach(0..<count, id: \.self) { i in
-                    if i > 0 { Rectangle().fill(Theme.lineSoft).frame(height: 1) }
-                    HStack(spacing: 14) {
-                        SkeletonBlock(width: icon, height: icon, radius: icon / 4)
-                        VStack(alignment: .leading, spacing: 7) {
-                            SkeletonBlock(width: CGFloat(150 + (i * 53) % 130), height: 12)
-                            SkeletonBlock(width: CGFloat(240 + (i * 37) % 160), height: 10)
+            // ScrollView blocat: pe ferestre joase rândurile în plus se taie în loc să mărească pagina.
+            ScrollView {
+                VStack(spacing: 0) {
+                    ForEach(0..<count, id: \.self) { i in
+                        if i > 0 { Rectangle().fill(Theme.lineSoft).frame(height: 1) }
+                        HStack(spacing: 14) {
+                            SkeletonBlock(width: icon, height: icon, radius: icon / 4)
+                            VStack(alignment: .leading, spacing: 7) {
+                                // Lățimi maxime, nu fixe: lista se poate îngusta fără să împingă fereastra.
+                                SkeletonBlock(height: 12).frame(maxWidth: CGFloat(150 + (i * 53) % 130), alignment: .leading)
+                                SkeletonBlock(height: 10).frame(maxWidth: CGFloat(240 + (i * 37) % 160), alignment: .leading)
+                            }
+                            Spacer()
+                            SkeletonBlock(width: 64, height: 12)
                         }
-                        Spacer()
-                        SkeletonBlock(width: 64, height: 12)
+                        .padding(.horizontal, 16).frame(height: 58)
                     }
-                    .padding(.horizontal, 16).frame(height: 58)
                 }
+                .card()
             }
-            .card()
-            Spacer(minLength: 0)
+            .scrollDisabled(true)
+            .scrollIndicators(.never)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .accessibilityElement(children: .ignore)

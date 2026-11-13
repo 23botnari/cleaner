@@ -91,7 +91,7 @@
 "Claude Code: fișiere temporare" = "Claude Code: temporary files";
 "Claude Desktop: cache" = "Claude Desktop: cache";
 "Claude Desktop: mașina virtuală" = "Claude Desktop: virtual machine";
-"Cleaner MacOS" = "Cleaner MacOS";
+"Cleaner" = "Cleaner";
 "CocoaPods: cache" = "CocoaPods: cache";
 "Comanda a eșuat." = "Command failed.";
 "Comanda a eșuat: %@" = "Command failed: %@";
@@ -117,7 +117,7 @@
 "Dependențe Java descărcate. Se redescarcă la următorul build. Pachetele publicate doar local (mvn install) trebuie reconstruite." = "Downloaded Java dependencies. Downloaded again on the next build. Packages published only locally (mvn install) must be rebuilt.";
 "Depozitul global de pachete pnpm. Se reface la următorul pnpm install." = "The global pnpm package store. It is rebuilt on the next pnpm install.";
 "Deschide" = "Open";
-"Deschide Cleaner MacOS" = "Open Cleaner MacOS";
+"Deschide Cleaner" = "Open Cleaner";
 "Deschide dezinstalatorul" = "Open uninstaller";
 "Deschide setarea" = "Open setting";
 "Descărcări" = "Downloads";
@@ -166,7 +166,7 @@
 "Folderul nu mai există." = "The folder no longer exists.";
 "Folosit" = "Used";
 "Forțează închiderea" = "Force Quit";
-"Fără el, aplicația nu poate vedea sau curăța unele foldere (de ex. WhatsApp, Coșul, unele cache-uri), iar mărimile pot fi mai mici decât în realitate. Deschide setarea, activează „Cleaner MacOS”, apoi repornește aplicația." = "Without it, the app cannot see or clean some folders (e.g. WhatsApp, the Trash, some caches), and sizes may be smaller than they really are. Open the setting, enable “Cleaner MacOS”, then restart the app.";
+"Fără el, aplicația nu poate vedea sau curăța unele foldere (de ex. WhatsApp, Coșul, unele cache-uri), iar mărimile pot fi mai mici decât în realitate. Deschide setarea, activează „Cleaner”, apoi repornește aplicația." = "Without it, the app cannot see or clean some folders (e.g. WhatsApp, the Trash, some caches), and sizes may be smaller than they really are. Open the setting, enable “Cleaner”, then restart the app.";
 "Gata" = "Done";
 "Go: cache de build" = "Go: build cache";
 "Go: module descărcate" = "Go: downloaded modules";
@@ -200,7 +200,7 @@
 "Mac (disc intern)" = "Mac (internal disk)";
 "Macintosh HD" = "Macintosh HD";
 "Mai ai %@ liber." = "You have %@ free.";
-"Mai ai %@ liber. Cleaner MacOS poate elibera %@." = "You have %@ free. Cleaner MacOS can free %@.";
+"Mai ai %@ liber. Cleaner poate elibera %@." = "You have %@ free. Cleaner can free %@.";
 "Maven: depozit local (~/.m2)" = "Maven: local repository (~/.m2)";
 "Model" = "Model";
 "Model descărcat în LM Studio. Se descarcă din nou din tab-ul Discover." = "Model downloaded in LM Studio. Downloaded again from the Discover tab.";
@@ -761,3 +761,13 @@
 "Gratuit și open source (licență MIT). Dacă îți e de folos, o stea pe GitHub îi ajută și pe alții să-l găsească. Acolo poți raporta și probleme." = "Free and open source (MIT license). If it's useful to you, a star on GitHub helps others find it. You can also report issues there.";
 "Raportează o problemă" = "Report an issue";
 "Dă-ne o stea" = "Star us";
+
+/* Dezinstalare */
+"DEZINSTALARE" = "UNINSTALL";
+"Dezinstalează Cleaner" = "Uninstall Cleaner";
+"Mută aplicația la Coș, împreună cu setările, istoricul și cache-urile ei, și oprește pornirea la login. Ce ai curățat nu se schimbă." = "Moves the app to the Trash together with its settings, history and caches, and turns off launch at login. Nothing you already cleaned changes.";
+"Dezinstalează…" = "Uninstall…";
+"Dezinstalezi Cleaner?" = "Uninstall Cleaner?";
+"Aplicația, setările, istoricul și cache-urile ei se mută la Coș, iar Cleaner se închide. Le poți recupera din Coș până îl golești." = "The app, its settings, history and caches go to the Trash, and Cleaner quits. You can restore them from the Trash until you empty it.";
+"Nu s-a putut dezinstala" = "Couldn't uninstall";
+"Mută manual aplicația la Coș din Finder. Motiv: %@" = "Move the app to the Trash in Finder. Reason: %@";

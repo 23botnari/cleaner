@@ -38,9 +38,9 @@ final class UpdateStore: ObservableObject {
     private var progressObservation: NSKeyValueObservation?
     private var checkedThisLaunch = false
 
-    /// CURATENIE_VERSION simulează o versiune mai veche (diagnostic).
+    /// CLEANER_VERSION simulează o versiune mai veche (diagnostic).
     static var currentVersion: String {
-        ProcessInfo.processInfo.environment["CURATENIE_VERSION"]
+        ProcessInfo.processInfo.environment["CLEANER_VERSION"]
             ?? Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
     }
 
@@ -130,7 +130,7 @@ final class UpdateStore: ObservableObject {
     private static func fetchLatest() async throws -> AppRelease {
         var req = URLRequest(url: URL(string: "https://api.github.com/repos/\(repo)/releases/latest")!)
         req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        req.setValue("CleanerMacOS-Updater", forHTTPHeaderField: "User-Agent")
+        req.setValue("Cleaner-Updater", forHTTPHeaderField: "User-Agent")
         req.timeoutInterval = 20
         req.cachePolicy = .reloadIgnoringLocalCacheData
         let (data, resp) = try await URLSession.shared.data(for: req)

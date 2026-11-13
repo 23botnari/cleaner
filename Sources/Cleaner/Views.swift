@@ -4,7 +4,7 @@ import ServiceManagement
 import UserNotifications
 
 @main
-struct CuratenieMacApp: App {
+struct CleanerApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
     // În App, nu în fereastră: iconița din bara de meniu le folosește și cu fereastra închisă.
     @StateObject private var rec = RecommendationsStore()
@@ -17,7 +17,7 @@ struct CuratenieMacApp: App {
     }
 
     var body: some Scene {
-        WindowGroup("Cleaner MacOS", id: "main") {
+        WindowGroup("Cleaner", id: "main") {
             ContentView(rec: rec, left: left, update: update)
                 .frame(minWidth: 1120, minHeight: 640)
         }
@@ -93,12 +93,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     /// Pornită de macOS la login (nu de utilizator): rămâne doar iconița din bara de meniu.
-    /// CURATENIE_LOGIN simulează pornirea la login (diagnostic).
+    /// CLEANER_LOGIN simulează pornirea la login (diagnostic).
     static var launchedAtLogin = false
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         let event = NSAppleEventManager.shared().currentAppleEvent
-        Self.launchedAtLogin = ProcessInfo.processInfo.environment["CURATENIE_LOGIN"] != nil
+        Self.launchedAtLogin = ProcessInfo.processInfo.environment["CLEANER_LOGIN"] != nil
             || (event?.eventID == kAEOpenApplication
                 && event?.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem)
         if Self.launchedAtLogin { Self.hideFromDock() }
@@ -109,7 +109,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         hideFromDock()
     }
 
-    /// Diagnostic: CURATENIE_SNAPSHOT=/cale/prefix salvează capturi ale ferestrei (fără permisiune de înregistrare ecran).
+    /// Diagnostic: CLEANER_SNAPSHOT=/cale/prefix salvează capturi ale ferestrei (fără permisiune de înregistrare ecran).
     func applicationDidFinishLaunching(_ notification: Notification) {
         LoginItem.enableOnce()
         if Self.launchedAtLogin {
@@ -133,7 +133,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         UNUserNotificationCenter.current().delegate = self
         Notifier.requestAuthorization()
-        guard let prefix = ProcessInfo.processInfo.environment["CURATENIE_SNAPSHOT"] else { return }
+        guard let prefix = ProcessInfo.processInfo.environment["CLEANER_SNAPSHOT"] else { return }
         let diag = [
             "fda=\(FullDiskAccess.granted())",
             "tcc=\(FileHandle(forReadingAtPath: "/Library/Application Support/com.apple.TCC/TCC.db") != nil)",
@@ -141,7 +141,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             "trash=\((try? FileManager.default.contentsOfDirectory(atPath: Paths.hp(".Trash")))?.count ?? -1)",
         ].joined(separator: "\n")
         try? diag.write(toFile: prefix + "-diag.txt", atomically: true, encoding: .utf8)
-        if ProcessInfo.processInfo.environment["CURATENIE_TARGETS"] != nil {
+        if ProcessInfo.processInfo.environment["CLEANER_TARGETS"] != nil {
             DispatchQueue.global().async {
                 let list = (Targets.homebrewTargets() + Targets.devCacheTargets() + Targets.toolVersionTargets() + Targets.iosDeviceTargets() + Targets.downloadsTargets()
                     + Targets.timeMachineTargets() + Targets.browserTargets()).filter(\.isVisible) + Targets.duplicateTargets()
@@ -150,7 +150,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 try? dump.joined(separator: "\n").write(toFile: prefix + "-targets.txt", atomically: true, encoding: .utf8)
             }
         }
-        if ProcessInfo.processInfo.environment["CURATENIE_LEFTOVERS"] != nil {
+        if ProcessInfo.processInfo.environment["CLEANER_LEFTOVERS"] != nil {
             DispatchQueue.global().async {
                 let dump = LeftoverScanner.scan().map { f in
                     "[\(f.kind.title)] \(f.title) (\(f.risk.label))\n" + f.shown.map { "    " + $0 }.joined(separator: "\n")
@@ -159,7 +159,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 try? dump.write(toFile: prefix + "-leftovers.txt", atomically: true, encoding: .utf8)
             }
         }
-        if let sz = ProcessInfo.processInfo.environment["CURATENIE_WINSIZE"]?.split(separator: "x").compactMap({ Double($0) }), sz.count == 2 {
+        if let sz = ProcessInfo.processInfo.environment["CLEANER_WINSIZE"]?.split(separator: "x").compactMap({ Double($0) }), sz.count == 2 {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                 NSApp.windows.first(where: { $0.isVisible && $0.canBecomeMain })?.setContentSize(NSSize(width: sz[0], height: sz[1]))
             }
@@ -198,7 +198,7 @@ struct FDABanner: View {
                 .font(.title2).foregroundStyle(.orange)
             VStack(alignment: .leading, spacing: 4) {
                 Text("Lipsește accesul complet la disc (Full Disk Access)").font(.headline)
-                Text("Fără el, aplicația nu poate vedea sau curăța unele foldere (de ex. WhatsApp, Coșul, unele cache-uri), iar mărimile pot fi mai mici decât în realitate. Deschide setarea, activează „Cleaner MacOS”, apoi repornește aplicația.")
+                Text("Fără el, aplicația nu poate vedea sau curăța unele foldere (de ex. WhatsApp, Coșul, unele cache-uri), iar mărimile pot fi mai mici decât în realitate. Deschide setarea, activează „Cleaner”, apoi repornește aplicația.")
                     .font(.callout).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -215,6 +215,36 @@ struct FDABanner: View {
     }
 }
 
+// MARK: - Dezinstalarea aplicației
+
+enum SelfUninstall {
+    /// Mută la Coș .app-ul și datele aplicației, apoi o închide. Întoarce mesajul de eroare dacă .app-ul nu se poate muta;
+    /// în acel caz nu se șterge nimic.
+    @MainActor
+    static func run() -> String? {
+        let fm = FileManager.default
+        let app = Bundle.main.bundleURL
+        do {
+            try fm.trashItem(at: app, resultingItemURL: nil)
+        } catch {
+            NSWorkspace.shared.activateFileViewerSelecting([app])
+            return tr("Mută manual aplicația la Coș din Finder. Motiv: \(error.localizedDescription)")
+        }
+        LoginItem.set(false)
+        let id = Bundle.main.bundleIdentifier ?? "io.webitfactory.Cleaner"
+        UserDefaults.standard.removePersistentDomain(forName: id)
+        UserDefaults.standard.synchronize()
+        let lib = Paths.hp("Library")
+        for p in ["Caches/\(id)", "HTTPStorages/\(id)", "Saved Application State/\(id).savedState",
+                  "Preferences/\(id).plist", "Application Support/\(id)"] {
+            let url = URL(fileURLWithPath: Paths.join(lib, p))
+            if fm.fileExists(atPath: url.path) { try? fm.trashItem(at: url, resultingItemURL: nil) }
+        }
+        NSApp.terminate(nil)
+        return nil
+    }
+}
+
 // MARK: - Pornire la login
 
 enum LoginItem {
@@ -226,13 +256,13 @@ enum LoginItem {
         let key = "loginItemConfigured"
         if !d.bool(forKey: key) {
             if set(true) { d.set(true, forKey: key) }
-            d.set(true, forKey: "loginItemMigratedToCleanerMacOS")
+            d.set(true, forKey: "loginItemMigratedToCleaner")
             return
         }
-        // Redenumirea în „Cleaner MacOS” mută .app-ul: o singură dată, reînregistrează elementul de login.
-        if !d.bool(forKey: "loginItemMigratedToCleanerMacOS") {
+        // Redenumirea în „Cleaner” mută .app-ul: o singură dată, reînregistrează elementul de login.
+        if !d.bool(forKey: "loginItemMigratedToCleaner") {
             if !enabled { set(true) }
-            d.set(true, forKey: "loginItemMigratedToCleanerMacOS")
+            d.set(true, forKey: "loginItemMigratedToCleaner")
         }
     }
 
@@ -260,7 +290,7 @@ enum Notifier {
         let c = UNMutableNotificationContent()
         c.title = tr("Spațiu puțin pe disc")
         c.body = reclaimable > 0
-            ? tr("Mai ai \(Fmt.bytes(free)) liber. Cleaner MacOS poate elibera \(Fmt.bytes(reclaimable)).")
+            ? tr("Mai ai \(Fmt.bytes(free)) liber. Cleaner poate elibera \(Fmt.bytes(reclaimable)).")
             : tr("Mai ai \(Fmt.bytes(free)) liber.")
         c.sound = .default
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "lowspace", content: c, trigger: nil))
@@ -392,7 +422,7 @@ struct MenuBarPanel: View {
             }
             Divider()
             HStack {
-                Button("Deschide Cleaner MacOS") {
+                Button("Deschide Cleaner") {
                     AppDelegate.launchedAtLogin = false
                     AppDelegate.showInDock()
                     openWindow(id: "main")

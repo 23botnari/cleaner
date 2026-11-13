@@ -52,7 +52,7 @@ struct Leftover: Identifiable, Sendable {
 }
 
 enum AppScanner {
-    static let ownBundleID = Bundle.main.bundleIdentifier ?? "io.webitfactory.CuratenieMac"
+    static let ownBundleID = Bundle.main.bundleIdentifier ?? "io.webitfactory.Cleaner"
 
     static func roots() -> [String] {
         var r = ["/Applications", Paths.hp("Applications")]

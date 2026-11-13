@@ -295,7 +295,7 @@ extension View {
 
 enum FullDiskAccess {
     static func granted() -> Bool {
-        if ProcessInfo.processInfo.environment["CURATENIE_FORCE_NO_FDA"] != nil { return false }
+        if ProcessInfo.processInfo.environment["CLEANER_FORCE_NO_FDA"] != nil { return false }
         if FileHandle(forReadingAtPath: "/Library/Application Support/com.apple.TCC/TCC.db") != nil { return true }
         for p in [Paths.hp("Library", "Safari"), Paths.hp("Library", "Mail"), Paths.hp("Library", "Messages")]
         where Paths.lexists(p) {

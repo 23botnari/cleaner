@@ -1,23 +1,19 @@
 #!/bin/zsh
-# Compilează „Cleaner MacOS”, asamblează .app, semnează și instalează în ~/Applications.
+# Compilează „Cleaner”, asamblează .app, semnează și instalează în ~/Applications.
 #   --install  instalează în ~/Applications
-#   --dmg      build/CleanerMacOS.dmg, semnat cu identitatea de dezvoltare
+#   --dmg      build/Cleaner.dmg, semnat cu identitatea de dezvoltare
 #   --release  DMG pentru publicare: semnat cu „Developer ID Application” (dacă există în Keychain)
 #              și notarizat când NOTARY_PROFILE numește un profil salvat cu
 #              `xcrun notarytool store-credentials`.
 set -euo pipefail
 cd "$(dirname "$0")"
 
-APP_NAME="Cleaner MacOS"
+APP_NAME="Cleaner"
 BUILD_DIR="build"
 APP="$BUILD_DIR/$APP_NAME.app"
 # Aceeași identitate la fiecare build => permisiunea Full Disk Access rămâne valabilă.
 # Implicit: certificatul cu care e semnată copia instalată, altfel primul „Apple Development” din Keychain.
-INSTALLED_ID=""
-for CANDIDATE in "$APP_NAME" "Cleaner" "Curățenie Mac"; do
-  [[ -n "$INSTALLED_ID" ]] && break
-  INSTALLED_ID="$(codesign -dvv "$HOME/Applications/$CANDIDATE.app" 2>&1 | sed -n 's/^Authority=\(Apple Development: .*\)/\1/p' | head -1 || true)"
-done
+INSTALLED_ID="$(codesign -dvv "$HOME/Applications/$APP_NAME.app" 2>&1 | sed -n 's/^Authority=\(Apple Development: .*\)/\1/p' | head -1 || true)"
 SIGN_ID="${SIGN_ID:-${INSTALLED_ID:-$(security find-identity -v -p codesigning | sed -n 's/.*"\(Apple Development: .*\)"/\1/p' | head -1)}}"
 
 MODE="${1:-}"
@@ -42,7 +38,7 @@ if [[ -z "${SDKROOT:-}" && "$(xcode-select -p)" == /Library/Developer/CommandLin
 fi
 
 swift build -c release
-BIN="$(swift build -c release --show-bin-path)/CuratenieMac"
+BIN="$(swift build -c release --show-bin-path)/Cleaner"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
@@ -58,7 +54,7 @@ fi
 cp "$BUILD_DIR/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
 if [[ -n "$SIGN_ID" ]] && security find-identity -v -p codesigning | grep -qF "$SIGN_ID"; then
-  codesign --force --options runtime $TIMESTAMP --entitlements Resources/CuratenieMac.entitlements --sign "$SIGN_ID" "$APP"
+  codesign --force --options runtime $TIMESTAMP --entitlements Resources/Cleaner.entitlements --sign "$SIGN_ID" "$APP"
 else
   echo "Identitatea '$SIGN_ID' lipsește; semnez ad-hoc (Full Disk Access se va cere din nou după fiecare build)."
   codesign --force --sign - "$APP"
@@ -82,14 +78,14 @@ fi
 
 if [[ "$MODE" == "--dmg" || "$MODE" == "--release" ]]; then
   STAGE="$BUILD_DIR/dmg"
-  rm -rf "$STAGE" "$BUILD_DIR/CleanerMacOS.dmg"
+  rm -rf "$STAGE" "$BUILD_DIR/Cleaner.dmg"
   mkdir -p "$STAGE"
   ditto "$APP" "$STAGE/$APP_NAME.app"
   ln -s /Applications "$STAGE/Applications"
-  hdiutil create -volname "$APP_NAME" -srcfolder "$STAGE" -ov -format UDZO "$BUILD_DIR/CleanerMacOS.dmg" >/dev/null
+  hdiutil create -volname "$APP_NAME" -srcfolder "$STAGE" -ov -format UDZO "$BUILD_DIR/Cleaner.dmg" >/dev/null
   rm -rf "$STAGE"
   if [[ "$MODE" == "--release" ]]; then
-    DMG="$BUILD_DIR/CleanerMacOS.dmg"
+    DMG="$BUILD_DIR/Cleaner.dmg"
     if [[ "$TIMESTAMP" == "--timestamp" ]]; then codesign --force --timestamp --sign "$SIGN_ID" "$DMG"; fi
     if [[ -n "${NOTARY_PROFILE:-}" ]]; then
       xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait
@@ -98,5 +94,5 @@ if [[ "$MODE" == "--dmg" || "$MODE" == "--release" ]]; then
       echo "NOTARY_PROFILE nu e setat: DMG-ul nu e notarizat."
     fi
   fi
-  echo "DMG: $PWD/$BUILD_DIR/CleanerMacOS.dmg"
+  echo "DMG: $PWD/$BUILD_DIR/Cleaner.dmg"
 fi

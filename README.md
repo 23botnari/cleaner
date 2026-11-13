@@ -1,4 +1,8 @@
-<h1 align="center">Cleaner MacOS</h1>
+<p align="center">
+  <img src="docs/icon.png" alt="Cleaner icon" width="112">
+</p>
+
+<h1 align="center">Cleaner</h1>
 
 <p align="center">
   <b>Free up gigabytes on your Mac in a minute. Safely.</b><br>
@@ -6,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/23botnari/cleaner/releases/latest/download/CleanerMacOS.dmg"><b>Download for macOS</b></a>
+  <a href="https://github.com/23botnari/cleaner/releases/latest/download/Cleaner.dmg"><b>Download for macOS</b></a>
   &nbsp;·&nbsp;
   <a href="#install">Install with Homebrew</a>
   &nbsp;·&nbsp;
@@ -16,7 +20,7 @@
 <p align="center"><sub>macOS 15 Sequoia or newer · Apple Silicon · English and Romanian</sub></p>
 
 <p align="center">
-  <img src="docs/screenshot.png" alt="Cleaner MacOS overview" width="860">
+  <img src="docs/screenshot.png" alt="Cleaner overview" width="860">
 </p>
 
 <table>
@@ -87,7 +91,7 @@
 
 ## Install
 
-**Download:** get [CleanerMacOS.dmg](https://github.com/23botnari/cleaner/releases/latest/download/CleanerMacOS.dmg) and drag **Cleaner MacOS** to Applications. All versions are on the [Releases](../../releases) page.
+**Download:** get [Cleaner.dmg](https://github.com/23botnari/cleaner/releases/latest/download/Cleaner.dmg) and drag **Cleaner** to Applications. All versions are on the [Releases](../../releases) page.
 
 **Homebrew:**
 
@@ -107,15 +111,15 @@ Then:
 Requires Xcode or the Command Line Tools with Swift 6. No third-party dependencies.
 
 ```bash
-./build.sh            # build/Cleaner MacOS.app
+./build.sh            # build/Cleaner.app
 ./build.sh --install  # install to ~/Applications
-./build.sh --dmg      # build/CleanerMacOS.dmg
+./build.sh --dmg      # build/Cleaner.dmg
 ./build.sh --release  # DMG signed with Developer ID and notarized when NOTARY_PROFILE is set
 ```
 
 ## Contributing
 
-Found a bug or have an idea? Open an [issue](../../issues). If Cleaner MacOS freed up some space for you, a ⭐ on GitHub helps other people find it.
+Found a bug or have an idea? Open an [issue](../../issues). If Cleaner freed up some space for you, a ⭐ on GitHub helps other people find it.
 
 ## License
 

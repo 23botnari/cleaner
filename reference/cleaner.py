@@ -6,7 +6,7 @@ Curățenie Mac — vezi ce ocupă loc și curăță prin click-uri.
 Rulează local: pornește un mic server pe 127.0.0.1 și deschide interfața în browser.
 Nimic nu pleacă de pe Mac.
 
-Pornire:  python3 curatenie_mac.py
+Pornire:  python3 cleaner.py
 Oprire:   Ctrl+C în Terminal
 """
 import fnmatch

@@ -2,12 +2,12 @@
 import PackageDescription
 
 let package = Package(
-    name: "CuratenieMac",
+    name: "Cleaner",
     platforms: [.macOS(.v15)],
     targets: [
         .executableTarget(
-            name: "CuratenieMac",
-            path: "Sources/CuratenieMac",
+            name: "Cleaner",
+            path: "Sources/Cleaner",
             swiftSettings: [.swiftLanguageMode(.v5)]
         )
     ]

@@ -95,7 +95,7 @@ struct ContentView: View {
     @StateObject private var apps = AppsStore()
     @StateObject private var startup = StartupStore()
     @StateObject private var flow = CleanFlow()
-    @State private var section: Section = Section(rawValue: ProcessInfo.processInfo.environment["CURATENIE_TAB"] ?? "") ?? .overview
+    @State private var section: Section = Section(rawValue: ProcessInfo.processInfo.environment["CLEANER_TAB"] ?? "") ?? .overview
     @State private var focusGroup: String?
     @State private var hasFDA = FullDiskAccess.granted()
     @State private var expLoaded = false
@@ -123,7 +123,7 @@ struct ContentView: View {
             rec.scanIfNeeded()
             apps.scan()
             left.scanIfNeeded()
-            if let dir = ProcessInfo.processInfo.environment["CURATENIE_BIG"] {  // diagnostic
+            if let dir = ProcessInfo.processInfo.environment["CLEANER_BIG"] {  // diagnostic
                 big.path = dir
                 big.findBigFiles()
             }
@@ -254,9 +254,19 @@ struct AppSidebar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("Cleaner MacOS")
-                .font(.system(size: 15, weight: .bold))
-                .padding(.horizontal, 10).padding(.top, 50).padding(.bottom, 14)
+            HStack(spacing: 6) {
+                // Iconul are margine transparentă (grila macOS), de aici dimensiunea mai mare și padding-ul negativ.
+                Image(nsImage: NSApp.applicationIconImage)
+                    .resizable()
+                    .frame(width: 28, height: 28)
+                    .padding(.leading, -3)
+                Text("Cleaner")
+                    .font(.system(size: 15, weight: .bold))
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { section = .overview }
+            .accessibilityAddTraits(.isButton)
+            .padding(.horizontal, 10).padding(.top, 46).padding(.bottom, 10)
             ForEach(Section.main.filter { $0 != .dev || devMode }, id: \.self) { s in
                 let on = s == section
                 let badge = s == .rec ? rec.reclaimable(dev: false) : s == .dev ? rec.reclaimable(dev: true) : 0
@@ -427,6 +437,15 @@ struct OverviewView: View {
     @ObservedObject var apps: AppsStore
     @ObservedObject var flow: CleanFlow
     var open: (String) -> Void
+    @State private var contentWidth: CGFloat = 900
+
+    /// Coloane echilibrate: cât mai puține rânduri, apoi carduri împărțite egal (4 → 2+2 sau 4, niciodată 3+1).
+    private func gridColumns(_ n: Int) -> [GridItem] {
+        let fit = max(1, Int((contentWidth + 12) / (260 + 12)))
+        let rows = max(1, Int(ceil(Double(max(n, 1)) / Double(fit))))
+        let cols = max(1, Int(ceil(Double(max(n, 1)) / Double(rows))))
+        return Array(repeating: GridItem(.flexible(), spacing: 12), count: cols)
+    }
 
     var body: some View {
         let used = max(0, rec.diskTotal - rec.diskFree)
@@ -489,7 +508,7 @@ struct OverviewView: View {
                 }
                 .card(radius: 16, padding: 26)
 
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 230), spacing: 12)], spacing: 12) {
+                LazyVGrid(columns: gridColumns(groups.isEmpty ? 4 : groups.count), spacing: 12) {
                     if groups.isEmpty && rec.scanning {
                         ForEach(0..<4, id: \.self) { _ in
                             VStack(alignment: .leading, spacing: 10) {
@@ -554,7 +573,8 @@ struct OverviewView: View {
                     .card(padding: 16)
                 }
             }
-            .frame(maxWidth: 1000, alignment: .leading)
+            .frame(maxWidth: 1240, alignment: .leading)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { contentWidth = $0 }
             .padding(.horizontal, 28).padding(.bottom, 28)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -1337,6 +1357,8 @@ struct SettingsPage: View {
     @AppStorage(Prefs.rescanHoursKey) private var rescanHours = 6
     @AppStorage(Prefs.lowSpaceGBKey) private var lowSpaceGB = 4
     @AppStorage(Prefs.loadAlertsKey) private var loadAlerts = true
+    @State private var confirmUninstall = false
+    @State private var uninstallError: (title: String, body: String)?
 
     var body: some View {
         ScrollView {
@@ -1440,7 +1462,7 @@ struct SettingsPage: View {
                     }
                 }
                 group("DESPRE") {
-                    row("Cleaner MacOS", Text(tr("Versiunea \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"))") + updateStatus)) {
+                    row("Cleaner", Text(tr("Versiunea \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"))") + updateStatus)) {
                         Button("Caută actualizări") { Task { await update.check(manual: true) } }
                             .buttonStyle(SecondaryButtonStyle(height: 32))
                             .disabled(update.busy)
@@ -1465,6 +1487,12 @@ struct SettingsPage: View {
                         }
                     }
                 }
+                group("DEZINSTALARE") {
+                    row("Dezinstalează Cleaner", Text("Mută aplicația la Coș, împreună cu setările, istoricul și cache-urile ei, și oprește pornirea la login. Ce ai curățat nu se schimbă.")) {
+                        Button("Dezinstalează…") { confirmUninstall = true }
+                            .buttonStyle(SecondaryButtonStyle(height: 32))
+                    }
+                }
             }
             .frame(maxWidth: 760, alignment: .leading)
             .padding(.horizontal, 28).padding(.bottom, 28)
@@ -1474,6 +1502,16 @@ struct SettingsPage: View {
             hasFDA = FullDiskAccess.granted()
             atLogin = LoginItem.enabled
         }
+        .appDialog(isPresented: $confirmUninstall,
+                   title: { tr("Dezinstalezi Cleaner?") },
+                   message: { tr("Aplicația, setările, istoricul și cache-urile ei se mută la Coș, iar Cleaner se închide. Le poți recupera din Coș până îl golești.") },
+                   buttons: { [.cancel(), DialogButton(title: tr("Dezinstalează"), kind: .destructive) {
+                       if let err = SelfUninstall.run() {
+                           // Dialogul curent se închide după acțiune; mesajul apare imediat după.
+                           DispatchQueue.main.async { uninstallError = (tr("Nu s-a putut dezinstala"), err) }
+                       }
+                   }] })
+        .appMessage($uninstallError)
     }
 
     private var divider: some View { Rectangle().fill(Theme.lineSoft).frame(height: 1) }
