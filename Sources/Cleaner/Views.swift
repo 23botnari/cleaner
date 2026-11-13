@@ -231,7 +231,7 @@ enum SelfUninstall {
             return tr("Mută manual aplicația la Coș din Finder. Motiv: \(error.localizedDescription)")
         }
         LoginItem.set(false)
-        let id = Bundle.main.bundleIdentifier ?? "io.webitfactory.Cleaner"
+        let id = Bundle.main.bundleIdentifier ?? "io.botnari.Cleaner"
         UserDefaults.standard.removePersistentDomain(forName: id)
         UserDefaults.standard.synchronize()
         let lib = Paths.hp("Library")

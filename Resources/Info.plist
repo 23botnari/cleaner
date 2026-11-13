@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key><string>ro</string>
 	<key>CFBundleLocalizations</key><array><string>ro</string><string>en</string></array>
 	<key>CFBundleExecutable</key><string>Cleaner</string>
-	<key>CFBundleIdentifier</key><string>io.webitfactory.Cleaner</string>
+	<key>CFBundleIdentifier</key><string>io.botnari.Cleaner</string>
 	<key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
 	<key>CFBundleName</key><string>Cleaner</string>
 	<key>CFBundleDisplayName</key><string>Cleaner</string>
@@ -18,6 +18,6 @@
 	<key>NSHighResolutionCapable</key><true/>
 	<key>NSPrincipalClass</key><string>NSApplication</string>
 	<key>NSAppleEventsUsageDescription</key><string>Cleaner cere Finder-ului să mute la Coș aplicațiile care aparțin altui utilizator (de ex. din App Store) și resturile din /Library sau protejate de macOS. Finder îți va cere parola de administrator.</string>
-	<key>NSHumanReadableCopyright</key><string>© 2026 Webit Factory. MIT License.</string>
+	<key>NSHumanReadableCopyright</key><string>© 2026 Ion Botnari. MIT License.</string>
 </dict>
 </plist>
